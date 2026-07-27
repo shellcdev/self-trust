@@ -18,6 +18,7 @@ from core import audit as audit_io
 from core import contract as contract_io
 from core import formulas as F
 from core.models import living_baseline_value
+from modules import streaks
 
 BAR_WIDTH = 16
 LAG_YELLOW = 0.0    # lag > 0 → 落后（黄）
@@ -191,7 +192,16 @@ def run_report(data_dir: Path, *, today: date | None = None) -> dict[str, Any]:
     else:
         result["snapshot_appended"] = None
 
-    # 运行态：更新 last_report_date（引擎可写）
-    contract["last_report_date"] = today.isoformat()
+    # 运行态：§3.1 平滑过渡计数器（先观察缺报天数再记上报，缺报提示不被归零吞掉）
+    last = contract.get("last_report_date")
+    observed_gap = ((today - date.fromisoformat(str(last)[:10])).days
+                    if last else 0)
+    streaks.record_report(contract, today)
     contract_io.write_contract(data_dir, contract, actor="engine")
+    result["report_streak"] = contract["report_streak"]
+    result["gap_streak_observed"] = observed_gap
+    hint = streaks.transition_hint(contract, observed_gap=observed_gap)
+    result["mode_transition_hint"] = hint
+    if hint:
+        result["notes"].append(hint["message"])
     return result

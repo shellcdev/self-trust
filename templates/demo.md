@@ -21,4 +21,9 @@
       分 {N} 月从合理享受额度支取，每月约 ¥{30000/N}）
 ```
 
-[stub] 当前 `demo_scenarios()` 返回场景框架未接真实测算；实装后 `{...}` 占位由引擎 F1/F2 + judge 干跑输出填充。
+已实装：`python scripts/cli.py demo` 输出真实引擎干跑 JSON，`{...}` 占位由以下字段填充（禁止心算）：
+- `{threshold}` ← `engine_params.cooldown_threshold`；`{effective_cushion}` ← `engine_params.judge_cushion`；
+- `{cooldown_days}` ← `scenarios[1].cooldown_days`；`{F5}` ← 对应场景的 `delay_months_simple`（用「约」措辞）；
+- `{N}` / `{30000/N}` ← `alt_plan_scenario3.months` / `alt_plan_scenario3.per_month`；
+- 实际场景金额以 `scenarios[].amount` 为准（契约参数极端时引擎会推导替代金额，文案随引擎输出走）；
+- `demo_defaults_used=true` 时必须额外声明「⚠️ 演示数据，非您的真实契约」（notes 已自带）。

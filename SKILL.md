@@ -37,7 +37,8 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 | 记账对账 | hybrid 用户拍板修正：`python scripts/cli.py reconcile [--corpus 元] [--income 元] [--invest 元] [--living 元] [--impulse 元]` | references/data-modes.md |
 | 记账重置 | 二次确认整文件重建（audit 保留）：`python scripts/cli.py reset --confirm --corpus 元 --monthly 元 --objective "名:目标额:期限" [--reason "..."]` | references/exceptions.md |
 | 记账日志 [类型] | 审计只读查询：`python scripts/cli.py log --name approval_log\|appeal_log\|override_log\|reward_log\|monthly_history` | references/report.md |
-| 记账切模式 / 记账自定义 / 记账白名单 / 记账演示 / 第三方导入 | 待实施（见 STATUS.md） | 对应 references |
+| 记账演示 | 三场景真实干跑（不落盘不影响真实账户）：`python scripts/cli.py demo`（init 回执也自动附 demo 区块） | references/init.md |
+| 记账切模式 / 记账自定义 / 记账白名单 / 第三方导入 | 待实施（见 STATUS.md）；§3.1 平滑过渡提示已实装（report/judge 输出 `mode_transition_hint`，仅建议不自动改 mode） | 对应 references |
 
 **全局参数**（所有子命令通用，只说明这一次）：
 - `--data-dir <path>`：数据目录（优先级：命令行 > `SELFTRUST_DATA_DIR` > 默认 `<home>/.claw/self-trust/`）；
@@ -63,4 +64,4 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 
 ## 状态
 
-核心闭环（初始化→审批→冷静期→报表→校准→奖励→申诉/覆写→重置→对账）已实装并通过测试（168 单测 + 12 端到端）。剩余待实施：模式切换/自定义/演示/第三方导入。实现进度见 STATUS.md（真相源）。
+核心闭环（初始化→审批→冷静期→报表→校准→奖励→申诉/覆写→重置→对账）+ §7.2 演示干跑 + §3.1 平滑过渡计数器已实装并通过测试（191 单测 + 12 端到端）。剩余待实施：模式切换/自定义/第三方导入。实现进度见 STATUS.md（真相源）。

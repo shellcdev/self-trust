@@ -22,6 +22,7 @@ from typing import Any, Optional
 from core import audit as audit_io
 from core import contract as contract_io
 from core import formulas as F
+from modules import streaks
 
 APPEAL_OVERRIDE_THRESHOLD = 3   # §5.2 连续申诉驳回满 3 次开放人工覆写
 
@@ -255,6 +256,11 @@ def reconcile(
     contract.setdefault("reconcile", {})
     contract["reconcile"]["last_reconcile"] = today.isoformat()
     contract["reconcile"]["reminder_streak"] = 0
+    # §3.1 对账/补录属上报行为 → report_streak 更新、gap_streak 归零（先观察缺报）
+    last = contract.get("last_report_date")
+    observed_gap = ((today - date.fromisoformat(str(last)[:10])).days
+                    if last else 0)
+    streaks.record_report(contract, today)
     # corpus 属配置区 → 用户拍板对账即配置者动作（引擎不自动改写，§3.2 护栏）
     contract_io.write_contract(data_dir, contract, actor="configurator")
 
@@ -276,4 +282,7 @@ def reconcile(
     return {"ok": True, "changes": changes,
             "last_reconcile": today.isoformat(),
             "snapshot_appended": snapshot,
+            "report_streak": contract["report_streak"],
+            "mode_transition_hint": streaks.transition_hint(
+                contract, observed_gap=observed_gap),
             "note": "对账为用户拍板确认；差额不进入审批判定历史（§3.2）"}

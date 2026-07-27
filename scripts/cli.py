@@ -99,6 +99,15 @@ def cmd_judge(args) -> int:
     return _emit(result, 0 if result.get("ok") else 1)
 
 
+def cmd_demo(args) -> int:
+    """§7.2 三场景模拟演示（干跑不落盘）：有契约用真实参数，无契约用演示默认值。"""
+    data_dir = contract_io.resolve_data_dir(args.data_dir)
+    contract = (contract_io.read_contract(data_dir)
+                if contract_io.contract_exists(data_dir) else None)
+    result = mod_init.demo_scenarios(contract, today=_today(args))
+    return _emit(result, 0 if result.get("ok") else 1)
+
+
 def cmd_report(args) -> int:
     data_dir = contract_io.resolve_data_dir(args.data_dir)
     result = mod_report.run_report(data_dir, today=_today(args))
@@ -205,6 +214,9 @@ def build_parser() -> argparse.ArgumentParser:
                          "expire 到期终裁 | reminders 双阶段提醒数据")
     sp.add_argument("--request-id", default=None, help="冷静期申请 id")
     sp.set_defaults(func=cmd_judge)
+
+    sp = sub.add_parser("demo", help="三场景模拟演示（§7.2，干跑不落盘不影响真实账户）")
+    sp.set_defaults(func=cmd_demo)
 
     sp = sub.add_parser("report", help="记账报表 + 月度快照（§6.1）")
     sp.set_defaults(func=cmd_report)

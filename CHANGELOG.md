@@ -1,5 +1,13 @@
 # CHANGELOG — self-trust
 
+## [0.3.0] - 2026-07-27
+
+### Added
+- §7.2 三场景模拟演示从 stub 改为真实引擎干跑（`modules/initialize.py::demo_scenarios`）：有契约时用真实契约参数（deepcopy 隔离，绝不回写），无契约时用演示专用默认值（纯内存，显式标注「演示数据，非您的真实契约」）；三场景金额首选设计文档 §7.2 表格值（35/6000/30000），与当前契约不匹配时由引擎中间变量（阈值/安全垫/月度净流入）确定性推导替代金额，保证 A/冷静期/C 三类判定真实命中；场景 3 附分期替代方案（N 由阈值推导，每笔≤冷静期阈值）；干跑走 judge 纯函数——不落盘、不入冷静期队列、不写审计（LLM 禁止心算铁律同样适用于演示文案）。
+- `cli.py` 新增 `demo` 子命令（`记账演示` 随时重看）；init 成功回执自动附 `demo` 区块（§7.2 交互口径）。
+- §3.1 平滑过渡计数器实装（`modules/streaks.py`）：`report_streak` 按连续自然日 +1（同日幂等、断档重计 1），`gap_streak` 按距最近上报日惰性刷新（报则归零）；挂载点：`report.run_report` / `governance.reconcile` 算上报事件，`judge.submit` 仅观察（审批不算上报）；阈值按 §3.1 原文：hybrid 下连续 7 天上报→建议升 ledger、连续 14 天缺报→建议降 conversational；提示为软建议（`mode_transition_hint` 字段 + notes 文案带真实计数），引擎绝不自动改 mode；ledger/conversational 已定态不弹；report 场景先观察后记录（`gap_streak_observed`），避免缺报提示被归零吞掉。字段 report_streak/gap_streak/last_report_date 属运行态区（FIELD_ZONES 既有白名单，引擎可写，不绕 guard）。
+- 测试 168 → 191：新增 test_demo（三场景判定类型/数字与 F1/F2/F5 独立复算一致/不落盘不变更契约/无契约默认值/init 附带/CLI 入口）、test_streaks（递增/同日幂等/断档重计/观察累积/7天・14天阈值/仅 hybrid/三挂载点落盘）；smoke_e2e 12/12 保持。
+
 ## [0.2.1] - 2026-07-27
 
 ### Fixed

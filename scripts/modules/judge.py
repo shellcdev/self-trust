@@ -24,6 +24,7 @@ from core import formulas as F
 from core.models import (
     PendingRequest, RequestStatus, can_transition, living_baseline_value,
 )
+from modules import streaks
 
 # ---------------------------------------------------------------- 确定性阈值常量
 # （§4.4 lag 恶化 / §7 调度；集中定义，全局唯一标准，不散落各分支）
@@ -283,6 +284,8 @@ def submit(
         return result
 
     changed = _reset_whitelist_year_if_needed(contract, today)
+    # §3.1 观察事件：审批不算上报，仅惰性刷新 gap_streak / 断档归零 report_streak
+    changed = streaks.observe(contract, today) or changed
     request_id: Optional[str] = None
 
     if result["cooldown"]["triggered"]:
@@ -328,6 +331,8 @@ def submit(
         "request_id": request_id,
         "planned": planned,
     })
+    # §3.1 平滑过渡软建议（仅 hybrid；文案带真实计数；引擎不自动改 mode）
+    result["mode_transition_hint"] = streaks.transition_hint(contract)
     return result
 
 

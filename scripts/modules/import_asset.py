@@ -93,6 +93,36 @@ def parse_flows_csv(path: Any) -> list[tuple[str, float]]:
     return out
 
 
+def _dedup_balances(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """按 (name, kind) 去重合并，防止同一账户在 CSV/手动录入中重复列出导致资产/负债双倍计入。
+
+    - 完全重复行（name/balance/kind/monthly 全同）= 同账户重复导出 → 丢弃多余副本。
+    - 同 name+kind 但余额/月供不同 = 歧义（可能漏列/错列）→ 求和并告警，不静默丢弃。
+    """
+    warnings: list[dict[str, Any]] = []
+    seen: dict[tuple[str, str], int] = {}  # (name, kind) -> index in merged
+    merged: list[dict[str, Any]] = []
+    for r in rows:
+        key = (r["name"], r["kind"])
+        idx = seen.get(key)
+        if idx is None:
+            merged.append(dict(r))
+            seen[key] = len(merged) - 1
+            continue
+        prev = merged[idx]
+        if prev["balance"] == r["balance"] and prev["monthly"] == r["monthly"]:
+            continue  # 完全重复 → 丢弃副本（修复 H1：不再双倍计入）
+        # 同账户余额不同 → 求和（保守不丢钱）+ 告警，交由人工核对
+        prev["balance"] = prev["balance"] + r["balance"]
+        prev["monthly"] = prev["monthly"] + r["monthly"]
+        warnings.append({
+            "name": r["name"], "kind": r["kind"],
+            "reason": (f"「{r['name']}」({r['kind']}) 出现多次且余额/月供不一致，"
+                       "已按同账户求和合并，请核对是否为错账或重复导出"),
+        })
+    return merged, warnings
+
+
 def compute_candidates(balances: list[dict[str, Any]],
                        flows: Optional[list[tuple[str, float]]] = None) -> dict[str, Any]:
     """由余额 / 流水行推导导入候选。
@@ -109,6 +139,8 @@ def compute_candidates(balances: list[dict[str, Any]],
     liabilities: list[dict[str, Any]] = []
     rigid: list[dict[str, Any]] = []
     asset_rows = liability_rows = rigid_rows = 0
+    # 修复 H1：先按 (name, kind) 去重合并，避免重复行导致资产/负债双倍计入
+    balances, dedup_warnings = _dedup_balances(balances)
     for r in balances:
         if r["kind"] == "asset":
             asset_rows += 1
@@ -160,6 +192,7 @@ def compute_candidates(balances: list[dict[str, Any]],
         "liabilities": liabilities,
         "rigid_annual_expenses": rigid,
         "suspicious": suspicious,
+        "warnings": dedup_warnings,
         "provided": provided,
         "summary": {
             "total_assets": corpus,
@@ -196,6 +229,7 @@ def stage_import(contract: dict[str, Any], candidates: dict[str, Any],
         "source": source,
         "summary": candidates["summary"],
         "suspicious": candidates["suspicious"],
+        "warnings": candidates.get("warnings", []),
         "candidates": {
             "corpus": candidates["corpus"],
             "monthly_contribution": candidates["monthly_contribution"],

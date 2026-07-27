@@ -1,5 +1,13 @@
 # CHANGELOG — self-trust
 
+## [0.7.6] - 2026-07-28
+
+### Fixed（硬伤扫描 H1–H3 修复）
+- **H1 第三方导入去重合并**：`import_asset.compute_candidates` 新增 `_dedup_balances`，按 `(name, kind)` 去重——完全重复行（余额/月供全同）静默丢弃，同名异额行求和并告警（`warnings`），**不再因 CSV 重复列出同一账户而把资产/负债双倍计入**（修复前：招行×2→corpus 100万、房贷×2→负债 160万）。
+- **H2 购房负债去重**：`customize._apply_changes` 的 `record_home_purchase` 分支，已存在「房贷」（手动录入或上次记录）时**更新而非追加**，避免负债/月供翻倍；连续两次记录仍只有一条。
+- **H3 融资购房白名单同口径**：`judge.submit` 极速放行年度额度记账由按全款 `amount` 累加改为按**实际现金流出 `actual_cash_out`（首付）**累加，与白名单限额闸门口径一致；非融资路径 `actual_cash_out==amount`，行为不变。修复前：100万房款首付30万却按100万吃年度 cap，3.3 倍吃光额度。
+- 测试 247 → 255（H1×4 / H2×3 / H3×1），全绿。
+
 ## [0.7.5] - 2026-07-28
 
 ### Changed

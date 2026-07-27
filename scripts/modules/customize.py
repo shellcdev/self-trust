@@ -292,10 +292,18 @@ def _apply_changes(contract: dict[str, Any], changes: dict[str, Any]):
     if hp:
         # 首付（打 liquid）→ corpus 减；融资部分 → 变负债（含月供）
         new["corpus"] = float(new.get("corpus", 0)) - hp["down_payment"]
-        new.setdefault("liabilities", []).append({
-            "name": "房贷", "balance": hp["financed"],
-            "monthly_payment": hp["mortgage_monthly"], "annual_rate": hp["rate"],
-        })
+        liabs = new.setdefault("liabilities", [])
+        # 修复 H2：已存在「房贷」（手动录入或上次记录）则更新而非追加，避免负债/月供翻倍
+        existing = next((x for x in liabs if x.get("name") == "房贷"), None)
+        if existing:
+            existing["balance"] = hp["financed"]
+            existing["monthly_payment"] = hp["mortgage_monthly"]
+            existing["annual_rate"] = hp["rate"]
+        else:
+            liabs.append({
+                "name": "房贷", "balance": hp["financed"],
+                "monthly_payment": hp["mortgage_monthly"], "annual_rate": hp["rate"],
+            })
         touched.add("corpus")
         touched.add("liabilities")
 

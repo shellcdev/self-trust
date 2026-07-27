@@ -387,9 +387,13 @@ def submit(
     elif (result["whitelist"].get("fast_track")
           and result["decision"]["scene"] in ("A", "B")):
         # §5.1.2 极速放行 → 年度额度记账
+        # 修复 H3：与白名单限额闸门口径一致，记「实际现金流出」而非全款。
+        #   非融资：actual_cash_out == amount（无变化）；融资购房：actual_cash_out == 首付，
+        #   避免用全款累加把年度 cap 倍数吃光。
+        actual_out = float(result["inputs"].get("actual_cash_out", amount))
         for item in contract.get("fast_track_whitelist", []):
             if item.get("name") == category:
-                item["used_annual"] = float(item.get("used_annual", 0)) + float(amount)
+                item["used_annual"] = float(item.get("used_annual", 0)) + actual_out
         changed = True
 
     if changed:

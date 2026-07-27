@@ -8,7 +8,7 @@ import copy
 from datetime import date
 
 from core import audit
-from core.contract import read_contract
+from core.contract import read_contract, write_contract
 from modules.judge import judge, submit
 
 TODAY = date(2026, 7, 27)
@@ -146,6 +146,30 @@ class TestSubmitPersistence:
         med = next(i for i in saved["fast_track_whitelist"] if i["name"] == "医疗")
         assert med["used_annual"] == 1000
         assert saved["whitelist_cap_year"] == 2027
+
+    def test_financed_whitelist_records_down_payment_not_full_price(self, tmp_data_dir, base_contract):
+        # H3 修复：融资购房走白名单极速放行时，年度额度应记「首付」而非全款，
+        # 与限额闸门口径一致（闸门口径用 actual_cash_out = 首付）。
+        c = read_contract(tmp_data_dir)
+        c["corpus"] = 5000000                       # 足够支付首付，确保场景 A 批准
+        c["fast_track_whitelist"] = [{"name": "购房", "per_tx_cap": 1000000,
+                                      "annual_cap": 1000000, "used_annual": 0}]
+        write_contract(tmp_data_dir, c, actor="configurator", confirm=True)
+        # 100万房款，首付 30%（30万），融资 70万 → 实际现金流出 30万
+        r = submit(tmp_data_dir, amount=1000000, category="购房",
+                   planned=False, financed_amount=700000, today=TODAY)
+        assert r["ok"]
+        assert r["whitelist"]["fast_track"] is True
+        saved = read_contract(tmp_data_dir)
+        item = next(i for i in saved["fast_track_whitelist"] if i["name"] == "购房")
+        assert item["used_annual"] == 300000        # 首付（修复前 = 1,000,000）
+        # 次年再买一套：年度 cap 1,000,000 应还能容纳首付，而非被全款吃光
+        submit(tmp_data_dir, amount=800000, category="购房",
+               planned=False, financed_amount=560000, today=date(2027, 1, 5))
+        saved2 = read_contract(tmp_data_dir)
+        item2 = next(i for i in saved2["fast_track_whitelist"] if i["name"] == "购房")
+        # 跨年重置后按首付 800000*0.3=240000 记账
+        assert item2["used_annual"] == 240000
 
     def test_f8_snapshot_appended(self, tmp_data_dir, base_contract):
         submit(tmp_data_dir, amount=6000, category="合理享受",

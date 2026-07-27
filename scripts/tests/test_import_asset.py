@@ -200,3 +200,49 @@ def test_manual_corpus_only_preserves_others(base_contract):
     assert base_contract["liabilities"][0]["name"] == "旧房贷"
     assert base_contract["rigid_annual_expenses"][0]["name"] == "旧保费"
     assert base_contract["monthly_contribution"] == 8000
+
+
+# ---------------------------------------------------------------- H1 修复：同名重复行去重合并
+def test_duplicate_asset_rows_deduped():
+    # 同一账户在 CSV 中重复列出 → 不应双倍计入 corpus（修复前 = 1,000,000）
+    rows = [
+        {"name": "招行", "balance": 500000, "kind": "asset", "monthly": 0},
+        {"name": "招行", "balance": 500000, "kind": "asset", "monthly": 0},
+    ]
+    c = mod.compute_candidates(rows)
+    assert c["corpus"] == 500000
+    assert c["warnings"] == []                      # 完全重复静默丢弃，无告警
+
+
+def test_duplicate_liability_rows_deduped():
+    rows = [
+        {"name": "房贷", "balance": 800000, "kind": "liability", "monthly": 5000},
+        {"name": "房贷", "balance": 800000, "kind": "liability", "monthly": 5000},
+    ]
+    c = mod.compute_candidates(rows)
+    assert len(c["liabilities"]) == 1
+    assert c["liabilities"][0]["balance"] == 800000
+    assert c["liabilities"][0]["monthly_payment"] == 5000
+
+
+def test_same_name_diff_balance_merges_with_warning():
+    # 同账户余额不同 → 求和（不丢钱、不双倍）+ 告警交由人工核对
+    rows = [
+        {"name": "招行", "balance": 500000, "kind": "asset", "monthly": 0},
+        {"name": "招行", "balance": 200000, "kind": "asset", "monthly": 0},
+    ]
+    c = mod.compute_candidates(rows)
+    assert c["corpus"] == 700000
+    assert any(w["name"] == "招行" for w in c["warnings"])
+
+
+def test_duplicate_rows_in_csv_deduped(tmp_path):
+    # 端到端：CSV 里招行/房贷各重复一行，导入后 cor/负债不翻倍
+    f = _write_csv(tmp_path / "b.csv", "name,balance,kind,monthly", [
+        "招行,500000,asset,", "招行,500000,asset,",
+        "房贷,800000,liability,5000", "房贷,800000,liability,5000",
+    ])
+    rows = mod.parse_balances_csv(f)
+    c = mod.compute_candidates(rows)
+    assert c["corpus"] == 500000
+    assert len(c["liabilities"]) == 1 and c["liabilities"][0]["balance"] == 800000

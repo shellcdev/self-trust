@@ -85,6 +85,7 @@ def _objective_impacts(
     invest_real: float,
     inflation: float,
     today: date,
+    boost_map: dict[str, float] | None = None,
 ) -> tuple[list[dict[str, Any]], bool, bool]:
     """lag 恶化校验（§4.4 场景 A 条件 2）：遍历 active 目标，按权重分摊本笔支出，
     用 F7 测算真实延后月数。返回 (impacted 列表, 整体恶化, 严重拖慢)。
@@ -111,8 +112,10 @@ def _objective_impacts(
         lag_info = F.f4_lag(o.get("current_amount", 0), target, start,
                             deadline, today) if deadline and start else None
         share = float(amount) * float(o.get("weight", 1.0)) / total_weight
+        boost_pct = (boost_map or {}).get(o.get("name"), 0.0)
+        obj_invest_real = invest_real * (1.0 + _boost_pct_to_frac(boost_pct))  # R1/N5
         real = F.f7_real_pace(share, o.get("current_amount", 0), target,
-                              deadline, today, invest_real,
+                              deadline, today, obj_invest_real,
                               inflation=inflation) if deadline and target else None
         delay_real = real.get("real_delay_months") if real else None
         delay_simple = F.f5_impact_simple(share, invest_nominal)
@@ -141,6 +144,22 @@ def _parse_date(s: Optional[str]) -> Optional[date]:
     if not s:
         return None
     return date.fromisoformat(str(s)[:10])
+
+
+def _boost_pct_to_frac(pct: float) -> float:
+    """N5：invest_boost_pct 为整数百分比（如 15 表示 15%），转为小数比例。
+
+    守卫：
+    - 必须在 [0, 100]；
+    - 0 < pct < 1 视为「误传比率」（如把 15% 写成 0.15），显式报错避免静默误用。
+    """
+    pct = float(pct)
+    if not (0.0 <= pct <= 100.0):
+        raise ValueError(f"invest_boost_pct 须为整数百分比 [0,100]，收到 {pct!r}")
+    if 0.0 < pct < 1.0:
+        raise ValueError(f"invest_boost_pct 疑似误传比率（{pct!r}）；"
+                         f"整数百分比应为 15 而非 0.15")
+    return pct / 100.0
 
 
 def judge(
@@ -197,8 +216,10 @@ def judge(
     else:
         threshold = float(threshold_cfg)
     dr = contract.get("distribution_rules", {})
-    invest_nominal = F.f3_monthly_invest_nominal(
-        f0["monthly_net"], dr.get("invest_ratio", 0.5))
+    ro = contract.get("rebalance_override") or {}  # R1：读取临时重平衡层
+    eff_invest_ratio = max(0.0, min(1.0,
+        float(dr.get("invest_ratio", 0.5)) + float(ro.get("invest_ratio_adj") or 0.0)))
+    invest_nominal = F.f3_monthly_invest_nominal(f0["monthly_net"], eff_invest_ratio)
     cp = dr.get("calc_params", {})
     inflation = cp.get("inflation", 0.025)
     invest_real = F.f3_5_monthly_invest_real(
@@ -244,11 +265,16 @@ def judge(
     mult_table = OPT_CUSHION_MULT_UNPLANNED if not planned else OPT_CUSHION_MULT
     mult = mult_table.get(goal, 1.0)
     judge_cushion = cushion * mult
+    # R1：审批收紧（approval_rate_adj，负数=收紧）→ 提高审批门槛（乘以 1-|adj|）
+    approval_adj = float(ro.get("approval_rate_adj") or 0.0)
+    judge_cushion_eff = judge_cushion * (1.0 - approval_adj)
 
     # ---- lag 恶化校验（F4 + F7 遍历 objectives，用实际现金流出测算）----
+    boost_map = {b.get("obj"): float(b.get("invest_boost_pct", 0))
+                 for b in (ro.get("boosts") or [])}  # R1/N5：目标投资加成映射
     impacted, worsened, severe = _objective_impacts(
         contract, actual_cash_out, planned, invest_nominal, invest_real,
-        inflation, today)
+        inflation, today, boost_map=boost_map)
 
     # ---- §4.4 三场景路由（资金/垫口径 + 目标进度不恶化条件）----
     if severe:
@@ -259,14 +285,14 @@ def judge(
         scene, result = "C", "驳回"
         summary = (f"月供 {mortgage_monthly:g} 超过月度净流入 {f0['monthly_net']:g}，"
                    "债务无法覆盖（月供压垮现金流，§4.4 融资购房可行性）")
-    elif remaining >= judge_cushion and not worsened:
+    elif remaining >= judge_cushion_eff and not worsened:
         scene, result = "A", "批准"
         summary = "扣除后仍在安全垫之上且不恶化目标进度，合理享受额度正常使用"
     elif remaining >= judge_cushion and worsened:
         scene, result = "B", "附条件"
         summary = ("资金面在安全垫之上，但将进一步拖累已实质落后的目标"
                    "（建议分期/延迟/缩减，§4.4 场景 A 条件 2 降级）")
-    elif f0["monthly_net"] > 0 and (judge_cushion - remaining) <= f0["monthly_net"]:
+    elif f0["monthly_net"] > 0 and (judge_cushion_eff - remaining) <= f0["monthly_net"]:
         scene, result = "B", "附条件"
         summary = "扣除后跌破安全垫，但月度净流入可覆盖缺口（建议分期/延迟/缩减）"
     else:
@@ -288,6 +314,10 @@ def judge(
             "goal": goal,
             "cushion_multiplier": mult,
             "judge_cushion": judge_cushion,
+            "rebalance_override": ro or None,             # R1
+            "effective_invest_ratio": eff_invest_ratio,   # R1
+            "approval_adj": approval_adj,                 # R1
+            "judge_cushion_eff": judge_cushion_eff,       # R1
         },
         "inputs": {
             **f0,

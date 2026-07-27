@@ -210,7 +210,8 @@ def cmd_appeal(args) -> int:
 def cmd_objective(args) -> int:
     data_dir = contract_io.resolve_data_dir(args.data_dir)
     result = mod_cal.transition_objective(
-        data_dir, args.name, args.to, confirm=args.confirm)
+        data_dir, args.name, args.to, confirm=args.confirm,
+        today=_today(args))  # N3：传递逻辑 today，审计时间对齐
     return _emit(result, 0 if result.get("ok") else 1)
 
 

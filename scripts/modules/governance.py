@@ -278,9 +278,11 @@ def reconcile(
     pending = contract.get("pending_spends") or []
     cleared = {"count": 0, "total_actual_cash_out": 0.0}
     if pending:
-        total = sum(float(s.get("actual_cash_out", 0)) for s in pending
-                    if s.get("status") != "withdrawn")
-        cleared = {"count": len(pending),
+        # N2：count 与 total 口径一致——均排除已撤回（withdrawn）的台账项，
+        #     避免「笔数含撤回、金额不含」的错位统计。
+        live = [s for s in pending if s.get("status") != "withdrawn"]
+        total = sum(float(s.get("actual_cash_out", 0)) for s in live)
+        cleared = {"count": len(live),
                    "total_actual_cash_out": round(total, 2)}
         contract["pending_spends"] = []  # 并入后清空（历史沉淀在 approval_log）
     # corpus 属配置区 → 用户拍板对账即配置者动作（引擎不自动改写，§3.2 护栏）

@@ -1,5 +1,18 @@
 # CHANGELOG — self-trust
 
+## [0.7.10] - 2026-07-28
+
+### Fixed（第三轮扫描 N1–N5 / R1–R3 修复）
+- **N1 安全垫模式大小写一致性**：`formulas.f1_effective_cushion` 已对 `mode` 做 `.lower()`（L5 覆盖），补 judge 路径回归测试确认 preview/customize（`_eff_cushion`）与 judge 行为一致，不再「preview 通过、judge 报错」。
+- **N2 reconcile 台账统计口径**：`governance.reconcile` 清空 `pending_spends` 时 `count` 与 `total_actual_cash_out` 均排除 `withdrawn` 项，消除「笔数含撤回、金额不含」错位。
+- **N3 归档审计时间对齐**：`calibrate.transition_objective` 审计记录时间由 `datetime.now()` 改为 `audit_io.now_iso(today)`，CLI 补传 `today`，重放可复现；并 `archived` 后 `weight` 归零（R2）。
+- **N4 重放时间可复现**：`audit.now_iso` 在 `today` 为显式重放日期（≠ 真实今日）时时间部分固定午夜 `00:00:00`，同一 `today` 审计链秒级可复现；真实运行仍用墙钟。
+- **N5 boost 百分比语义集中 + 守卫**：新增 `judge._boost_pct_to_frac`，`invest_boost_pct` 整数百分比（如 15 → 0.15）集中转换；`0<pct<1` 或越界（`>100`）显式报错，杜绝比率误传静默误用。
+- **R1 judge 接入 rebalance_override（自动放松生效）**：`judge` 现读取 `contract.rebalance_override` 并生效三效应——`invest_ratio_adj` 调整有效投资比例（收入下跌放松）、`approval_rate_adj` 调整审批门槛（lag 收紧）、`boosts` 对滞后目标加成投资节奏（更快追平）；输出 `optimization_applied` 暴露应用情况。
+- **R2 归档权重释放**：`calibrate.transition_objective` 对 `archived` 目标 `weight` 置 0，重新激活时不再用旧权重错配分摊（与 §6.4「权重释放」文档一致）。
+- **R3 禁止重复 stage 覆盖**：`import_asset.stage_import` 在已有 `imported_pending` 未确认/取消时拒绝新 stage（返回 `already_staged`），须先 confirm/cancel，避免旧候选被静默覆盖。
+- 新增回归测试 `scripts/tests/test_scan3.py`（13 例，覆盖 N1–N5 / R1–R3），测试 312 → 325，全绿。
+
 ## [0.7.9] - 2026-07-28
 
 ### Fixed（第二份扫描报告中等 M1–M9 / 轻微 L1–L11 修复，来源 `Loomy/self-trust-硬伤扫描报告.md`）

@@ -32,12 +32,19 @@ def log_path(data_dir: Path, log_name: str) -> Path:
 
 
 def now_iso(today: date | None = None) -> str:
-    """审计时间戳（M1）：逻辑重放时间 today（可被测试/重放覆盖）结合真实时刻，
+    """审计时间戳（M1/N4）：逻辑重放时间 today（可被测试/重放覆盖）。
 
-    保证重放场景审计链可复现（时间字段与逻辑 today 对齐，而非真实墙钟）。
+    - 真实运行（today 为 None，或 today 即真实今日）：保留真实墙钟时刻；
+    - 重放（today 为显式指定且 ≠ 真实今日）：时间部分固定为午夜 00:00:00，
+      使同一 today 的审计链在多次重放间秒级可复现（避免 datetime.now() 漂移，N4）。
     """
     base = today or date.today()
-    return datetime.combine(base, datetime.now().time()).isoformat(timespec="seconds")
+    # N4：仅当 today 为显式重放日期（≠ 真实今日）时锁定时间，保证可复现；
+    #     真实运行仍用墙钟，保留真实发生时刻。
+    t = (datetime.min.time()
+         if (today is not None and today != date.today())
+         else datetime.now().time())
+    return datetime.combine(base, t).isoformat(timespec="seconds")
 
 
 def _locked_append(path: Path, line: str) -> None:

@@ -269,6 +269,15 @@ def stage_import(contract: dict[str, Any], candidates: dict[str, Any],
     live corpus 暂不写入（staging 在 RUNTIME 区 pending_import），核对确认才落盘。
     返回摘要 + 确认 token（confirm 须带；cancel 亦须带）。
     """
+    # R3：已有待核对导入（imported_pending）未确认/取消时，禁止重复 stage 静默覆盖
+    #     旧候选；须先 confirm 或 cancel 当前导入，再发起新导入。
+    if contract.get("corpus_status") == "imported_pending" and contract.get("pending_import"):
+        return {
+            "ok": False, "error": "already_staged",
+            "message": ("已有待核对导入（imported_pending）未确认/取消，"
+                        "禁止重复拉取覆盖旧候选（R3）；请先 confirm 或 cancel "
+                        "当前导入，再发起新导入。"),
+        }
     prior_status = contract.get("corpus_status", "manual")
     staging = {
         "source": source,

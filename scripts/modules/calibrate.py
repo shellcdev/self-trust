@@ -265,6 +265,7 @@ def transition_objective(
     dst: str,
     *,
     confirm: bool = False,
+    today: date | None = None,
 ) -> dict[str, Any]:
     """§6.4 用户显式状态迁移（completed / archived / 延期回 active 由自定义走）。
 
@@ -292,20 +293,24 @@ def transition_objective(
                            f"{obj.get('weight')} 将释放，需 confirm=True 二次确认",
                 "released_weight": obj.get("weight")}
     prev = obj.get("status") or "active"
+    released = obj.get("weight")  # 记录释放前的权重（R2：归档后归零）
     obj["status"] = dst
+    if dst == "archived":
+        # R2：归档即释放权重（置 0），避免重新激活时旧权重仍参与分摊导致错配；
+        #     重新激活须由用户经 customize 重新分配权重（与 §6.4 文档一致）。
+        obj["weight"] = 0
     contract_io.write_contract(data_dir, contract, actor="configurator", confirm=True)
     # 归档留痕（§6.4：留 approval_log 归档记录）
-    from datetime import datetime
     audit_io.append(data_dir, "approval_log", {
-        "time": datetime.now().isoformat(timespec="seconds"),
+        "time": audit_io.now_iso(today),  # N3：审计时间对齐逻辑 today
         "event": f"objective_{dst}",
         "objective": name,
         "from": prev,
-        "released_weight": obj.get("weight"),
+        "released_weight": released,
         "note": ("current_amount 为资金池内的标记额度，资金始终在 corpus 自由层"
                  "（archived 仅解除标记语义，corpus 不变，资金不消失）"
                  if dst == "archived" else "达成收尾，奖励逻辑照常（§6.3）"),
     })
     return {"ok": True, "objective": name, "from": prev, "to": dst,
-            "released_weight": obj.get("weight"),
+            "released_weight": released,
             "message": "weight 已释放，请重分配到其余目标（记账自定义，过 §5.4 闸门）"}

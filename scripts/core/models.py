@@ -148,7 +148,20 @@ class Contract:
         "living_baseline": {"mode": "auto", "manual": 0, "history3m_value": None},
         "invest_ratio": 0.5,
         "calc_params": {"inflation": 0.025, "drawdown_factor": 0.10, "r_gross": 0.05},
-        "allowed_categories": ["食品", "居住", "医疗", "教育", "合理享受"],
+        # 标准类目词汇表（推荐清单，非硬约束；judge 当前不强制成员校验，见选项 B）。
+        # 逻辑分组（仅作展示顺序，数据层为扁平列表）：
+        #   生活必需：食品 居住 交通 通讯 医疗 教育
+        #   日常开销：服饰 日用
+        #   生活品质：合理享受（受保护「合理享受」额度）娱乐 旅行 社交 宠物
+        #   大额与保障：数码家电 保险
+        #   兜底：其他
+        "allowed_categories": [
+            "食品", "居住", "交通", "通讯", "医疗", "教育",
+            "服饰", "日用",
+            "合理享受", "娱乐", "旅行", "社交", "宠物",
+            "数码家电", "保险",
+            "其他",
+        ],
     })
     mode: str = "hybrid"            # ledger | conversational | hybrid
     reconcile: dict[str, Any] = field(default_factory=lambda: {

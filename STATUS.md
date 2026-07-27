@@ -2,7 +2,7 @@
 
 > 真相源在本文件（仓内 dev doc），不在记忆。状态标记：✅ 已实现 / ⚠️ 部分（骨架可跑，业务未完） / 待实施 / ❌ 已废弃。
 
-更新：2026-07-28（**支出类目词汇表专用开关（`--add-category`/`--remove-category`）**：原仅能 `--set distribution_rules.allowed_categories=...` 整表替换、无专用开关；allowed_categories 嵌套于 `distribution_rules`（已在 FIELD_ZONES 注册为 CONFIG 护栏字段），故专用开关直接复用 §5.4 二次确认校验、不触发冷却窗（因不改 invest_ratio）；去重追加 / 缺失报错；244 单测）
+更新：2026-07-28（**扩标准类目词汇表**：默认 `allowed_categories` 由 5 项扩至 16 项（生活必需/日常开销/生活品质/大额与保障/兜底），保留受保护的「合理享受」；仍为推荐清单、非硬约束（judge 不强制成员校验，选项 B 待定）。专用开关 `--add-category/--remove-category` 不变；测试 244 → 247（新增 test_models 锁定默认值 + 夹具改 园艺/健身））
 
 ## 当前阶段：核心闭环（初始化→审批→冷静期→报表→校准→奖励→治理）已通
 

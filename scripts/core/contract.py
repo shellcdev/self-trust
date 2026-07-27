@@ -30,6 +30,40 @@ class GuardError(PermissionError):
     """三区权限 / §5.4 闸门违规（显式抛出，不吞错）。"""
 
 
+# §10.3 运行态区显式包含「lag_streak / used_annual」等计数器——它们物理上嵌在
+# CONFIG 区父字段（objectives / fast_track_whitelist）内。引擎仅允许改动这些
+# 运行态子字段；父字段的其余结构（weight / target_amount / caps …）仍然只读。
+_ENGINE_SUBFIELD_ALLOW: dict[str, frozenset[str]] = {
+    "objectives": frozenset({"lag_streak", "reward_unlocked", "reward_quota", "status"}),
+    "fast_track_whitelist": frozenset({"used_annual"}),
+}
+# 引擎可自动执行的目标状态翻转：仅 active→overdue（超期是确定性事实，§6.4）；
+# completed / archived 须用户显式确认（configurator）。
+_ENGINE_STATUS_FLIPS = frozenset({("active", "overdue")})
+
+
+def _engine_list_change_ok(key: str, old_list: Any, new_list: Any) -> bool:
+    """引擎对 CONFIG 区列表字段的改动是否仅限运行态子字段（§10.3）。"""
+    if not isinstance(old_list, list) or not isinstance(new_list, list):
+        return False
+    if len(old_list) != len(new_list):
+        return False  # 引擎不得增删条目（结构改动属配置区）
+    allowed = _ENGINE_SUBFIELD_ALLOW[key]
+    for o, n in zip(old_list, new_list):
+        if not isinstance(o, dict) or not isinstance(n, dict):
+            return False
+        for k in set(o) | set(n):
+            if o.get(k) == n.get(k):
+                continue
+            if k not in allowed:
+                return False
+            if key == "objectives" and k == "status":
+                src = o.get(k) or "active"
+                if (src, n.get(k)) not in _ENGINE_STATUS_FLIPS:
+                    return False
+    return True
+
+
 def resolve_data_dir(cli_data_dir: Optional[str] = None) -> Path:
     """解析数据目录：命令行 > env > 默认 <cwd>/memory/trust/。"""
     if cli_data_dir:
@@ -71,6 +105,11 @@ def _validate_zones(new: dict[str, Any], old: Optional[dict[str, Any]],
             continue
         if zone is Zone.CONFIG:
             if actor != "configurator":
+                # 例外：objectives / fast_track_whitelist 内嵌的运行态计数器
+                # （lag_streak / reward_* / used_annual / active→overdue）引擎可写
+                if (key in _ENGINE_SUBFIELD_ALLOW and old is not None
+                        and _engine_list_change_ok(key, old.get(key), value)):
+                    continue
                 raise GuardError(
                     f"引擎无权修改配置区字段: {key}（§10.3 最小权限）")
             if key in CORE_GUARD_FIELDS and not confirm:

@@ -45,6 +45,57 @@ class TestEngineCannotWriteConfigZone:
         with pytest.raises(GuardError):
             write_contract(tmp_data_dir, c, actor="engine")
 
+    def test_engine_cannot_add_or_remove_objectives(self, tmp_data_dir, base_contract):
+        c = copy.deepcopy(base_contract)
+        c["objectives"].append({"name": "偷渡目标"})
+        with pytest.raises(GuardError):
+            write_contract(tmp_data_dir, c, actor="engine")
+
+    def test_engine_cannot_flip_status_to_completed(self, tmp_data_dir, base_contract):
+        """§6.4：completed/archived 须用户显式确认，引擎仅可 active→overdue。"""
+        c = copy.deepcopy(base_contract)
+        c["objectives"][0]["status"] = "completed"
+        with pytest.raises(GuardError):
+            write_contract(tmp_data_dir, c, actor="engine")
+
+    def test_engine_cannot_raise_whitelist_caps(self, tmp_data_dir, base_contract):
+        c = copy.deepcopy(base_contract)
+        c["fast_track_whitelist"][0]["per_tx_cap"] = 999999
+        with pytest.raises(GuardError):
+            write_contract(tmp_data_dir, c, actor="engine")
+
+
+class TestEngineRuntimeSubfields:
+    """§10.3：嵌在配置区父字段内的运行态计数器，引擎可写。"""
+
+    def test_engine_updates_lag_streak(self, tmp_data_dir, base_contract):
+        c = copy.deepcopy(base_contract)
+        c["objectives"][0]["lag_streak"] = 2
+        write_contract(tmp_data_dir, c, actor="engine")
+        assert read_contract(tmp_data_dir)["objectives"][0]["lag_streak"] == 2
+
+    def test_engine_updates_reward_fields(self, tmp_data_dir, base_contract):
+        c = copy.deepcopy(base_contract)
+        c["objectives"][0]["reward_unlocked"] = True
+        c["objectives"][0]["reward_quota"] = 12000.0
+        write_contract(tmp_data_dir, c, actor="engine")
+        saved = read_contract(tmp_data_dir)
+        assert saved["objectives"][0]["reward_quota"] == 12000.0
+
+    def test_engine_flips_active_to_overdue(self, tmp_data_dir, base_contract):
+        """超期是确定性事实，引擎可自动翻转 active→overdue（§6.4）。"""
+        c = copy.deepcopy(base_contract)
+        c["objectives"][0]["status"] = "overdue"
+        write_contract(tmp_data_dir, c, actor="engine")
+        assert read_contract(tmp_data_dir)["objectives"][0]["status"] == "overdue"
+
+    def test_engine_updates_used_annual(self, tmp_data_dir, base_contract):
+        c = copy.deepcopy(base_contract)
+        c["fast_track_whitelist"][0]["used_annual"] = 6000
+        write_contract(tmp_data_dir, c, actor="engine")
+        saved = read_contract(tmp_data_dir)
+        assert saved["fast_track_whitelist"][0]["used_annual"] == 6000
+
 
 class TestEngineCanWriteRuntimeZone:
     """运行态区（计数器/临时层）引擎可写。"""

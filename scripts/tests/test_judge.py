@@ -1,41 +1,50 @@
 # -*- coding: utf-8 -*-
-"""judge 骨架测试：三场景路由 + 白名单双上限 + 阈值 clamp（§4.4 / §5.1.2）。
+"""judge 基础路由测试：三场景 + 白名单双上限 + 阈值 clamp（§4.4 / §5.1.2）。
 
-注：judge 为骨架版（lag 恶化校验/冷静期入队为 stub），本套件覆盖已实装的
-确定性路由，后续 PR 实装时扩充。
+补全项（lag 恶化/入队/调度/拦截）见 test_judge_full.py / test_cooldown.py。
+全部显式传 today，确定性可重放。
 """
 from __future__ import annotations
 
+from datetime import date
+
 from modules.judge import judge, check_whitelist
+
+TODAY = date(2026, 7, 27)
 
 
 class TestSceneRouting:
     """base_contract: corpus=200000, monthly=8000, baseline=4000, 垫=24000（months×6）。"""
 
     def test_scene_a_approve(self, base_contract):
-        r = judge(base_contract, amount=6000, category="合理享受", planned=False)
+        r = judge(base_contract, amount=6000, category="合理享受", planned=False,
+                  today=TODAY)
         assert r["ok"] and r["decision"]["scene"] == "A"
         assert r["decision"]["result"] == "批准"
 
     def test_scene_b_conditional(self, base_contract):
         # 200000 - 180000 = 20000 < 24000，缺口 4000 ≤ 月净流入 8000 → B
-        r = judge(base_contract, amount=180000, category="合理享受", planned=False)
+        r = judge(base_contract, amount=180000, category="合理享受", planned=False,
+                  today=TODAY)
         assert r["decision"]["scene"] == "B"
         assert r["decision"]["result"] == "附条件"
 
     def test_scene_c_reject(self, base_contract):
         # 缺口远超月净流入 → C
-        r = judge(base_contract, amount=199000, category="合理享受", planned=False)
+        r = judge(base_contract, amount=199000, category="合理享受", planned=False,
+                  today=TODAY)
         assert r["decision"]["scene"] == "C"
         assert r["decision"]["result"] == "驳回"
 
     def test_invalid_amount(self, base_contract):
-        r = judge(base_contract, amount=0, category="X", planned=False)
+        r = judge(base_contract, amount=0, category="X", planned=False,
+                  today=TODAY)
         assert r["ok"] is False and r["error"] == "invalid_amount"
 
     def test_outputs_full_intermediates(self, base_contract):
         """引擎 JSON 必须带全部中间变量（LLM 禁止心算铁律的前提）。"""
-        r = judge(base_contract, amount=100, category="食品", planned=True)
+        r = judge(base_contract, amount=100, category="食品", planned=True,
+                  today=TODAY)
         for key in ("corpus", "net_assets", "monthly_net", "living_baseline",
                     "effective_cushion", "monthly_invest_nominal",
                     "monthly_invest_real", "remaining_after"):
@@ -45,17 +54,20 @@ class TestSceneRouting:
 
 class TestCooldown:
     def test_small_amount_no_cooldown(self, base_contract):
-        r = judge(base_contract, amount=100, category="食品", planned=True)
+        r = judge(base_contract, amount=100, category="食品", planned=True,
+                  today=TODAY)
         assert r["cooldown"]["triggered"] is False
 
     def test_large_amount_triggers_cooldown(self, base_contract):
         # 阈值 = (24000/30)*3 = 2400（在 [800, 12000] clamp 内）
-        r = judge(base_contract, amount=6000, category="合理享受", planned=False)
+        r = judge(base_contract, amount=6000, category="合理享受", planned=False,
+                  today=TODAY)
         assert r["cooldown"]["threshold"] == 2400.0
         assert r["cooldown"]["triggered"] is True
 
     def test_whitelist_fast_track_skips_cooldown(self, base_contract):
-        r = judge(base_contract, amount=6000, category="医疗", planned=False)
+        r = judge(base_contract, amount=6000, category="医疗", planned=False,
+                  today=TODAY)
         assert r["whitelist"]["fast_track"] is True
         assert r["cooldown"]["triggered"] is False
         # 免等待不豁免判定：仍有场景结论

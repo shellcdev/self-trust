@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """self-trust 统一 CLI 入口（设计文档 §8.3 #1 / §9）。
 
-子命令：judge | init | report | reconcile | calibrate | reward | log
+子命令：judge | init | report | reconcile | calibrate | reward | reset | appeal | log
 - 全部输出结构化 JSON（stdout，UTF-8）；LLM 铁律：禁止心算，数字原样引用本输出。
 - 数据目录解析优先级：--data-dir > SELFTRUST_DATA_DIR > <cwd>/memory/trust/（README）。
 - 引擎错误显式返回 {"ok": false, "error": ...}，退出码非 0，不吞错。
@@ -11,25 +11,28 @@
         --corpus 200000 --monthly 8000 \\
         --objective "FIRE:3000000:2036-01-01"
     python scripts/cli.py judge --json --amount 6000 --category 合理享受
+    python scripts/cli.py judge --action withdraw --request-id abc123
 """
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import date
 from pathlib import Path
 
 # 允许 `python scripts/cli.py` 直接运行（scripts/ 加入 sys.path）
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from core import audit as audit_io          # noqa: E402
-from core import contract as contract_io    # noqa: E402
-from core.contract import GuardError        # noqa: E402
-from modules import calibrate as mod_cal    # noqa: E402
-from modules import initialize as mod_init  # noqa: E402
-from modules import judge as mod_judge      # noqa: E402
-from modules import report as mod_report    # noqa: E402
+from core import audit as audit_io           # noqa: E402
+from core import contract as contract_io     # noqa: E402
+from core.contract import GuardError         # noqa: E402
+from modules import calibrate as mod_cal     # noqa: E402
+from modules import governance as mod_gov    # noqa: E402
+from modules import initialize as mod_init   # noqa: E402
+from modules import judge as mod_judge       # noqa: E402
+from modules import report as mod_report     # noqa: E402
+from modules import reward as mod_reward     # noqa: E402
 
 
 def _emit(payload: dict, code: int = 0) -> int:
@@ -51,6 +54,10 @@ def _parse_objective(spec: str) -> dict:
     return obj
 
 
+def _today(args) -> date | None:
+    return date.fromisoformat(args.today) if getattr(args, "today", None) else None
+
+
 def cmd_init(args) -> int:
     data_dir = contract_io.resolve_data_dir(args.data_dir)
     objectives = [_parse_objective(s) for s in (args.objective or [])]
@@ -59,53 +66,106 @@ def cmd_init(args) -> int:
         corpus=args.corpus,
         monthly_contribution=args.monthly,
         objectives=objectives,
+        today=_today(args),
     )
     return _emit(result, 0 if result.get("ok") else 1)
 
 
 def cmd_judge(args) -> int:
     data_dir = contract_io.resolve_data_dir(args.data_dir)
-    contract = contract_io.read_contract(data_dir)
-    result = mod_judge.judge(
-        contract, amount=args.amount, category=args.category,
-        planned=args.planned)
-    if result.get("ok"):
-        # F8 快照落审计（骨架版：结构完整，字段随 judge 实装扩充）
-        audit_io.append_approval_snapshot(data_dir, {
-            "time": datetime.now().isoformat(timespec="seconds"),
-            "amount": args.amount,
-            "category": args.category,
-            "scene": result["decision"]["scene"],
-            "inputs": result["inputs"],
-            "formulas_used": result["formulas_used"],
-            "decision": result["decision"],
-            "alt_plan": "",
-        })
+    action = args.action or "submit"
+    if action == "submit":
+        if args.amount is None or args.category is None:
+            return _emit({"ok": False, "error": "invalid",
+                          "message": "judge 提交须提供 --amount 与 --category"}, 4)
+        result = mod_judge.submit(
+            data_dir, amount=args.amount, category=args.category,
+            planned=args.planned, today=_today(args))
+    elif action in ("withdraw", "finalize") and not args.request_id:
+        result = {"ok": False, "error": "invalid",
+                  "message": f"{action} 须提供 --request-id"}
+    elif action == "withdraw":
+        result = mod_judge.withdraw(data_dir, args.request_id, today=_today(args))
+    elif action == "finalize":
+        result = mod_judge.finalize(data_dir, args.request_id, today=_today(args))
+    elif action == "expire":
+        result = mod_judge.expire(data_dir, args.request_id, today=_today(args))
+    elif action == "reminders":
+        contract = contract_io.read_contract(data_dir)
+        result = {"ok": True, "reminders":
+                  mod_judge.list_due_reminders(contract, today=_today(args))}
+    else:  # pragma: no cover - argparse choices 已限制
+        result = {"ok": False, "error": "invalid", "message": f"未知 action {action}"}
     return _emit(result, 0 if result.get("ok") else 1)
 
 
 def cmd_report(args) -> int:
     data_dir = contract_io.resolve_data_dir(args.data_dir)
-    contract = contract_io.read_contract(data_dir)
-    return _emit(mod_report.render_report(contract))
+    result = mod_report.run_report(data_dir, today=_today(args))
+    return _emit(result, 0 if result.get("ok") else 1)
 
 
 def cmd_reconcile(args) -> int:
-    # [STUB] §3.2 hybrid 对账：核对/修正 corpus 等，更新 last_reconcile；后续 PR 实装
-    return _emit({"ok": True, "stub": True,
-                  "message": "reconcile 骨架占位（§3.2），待后续 PR 实装"})
+    data_dir = contract_io.resolve_data_dir(args.data_dir)
+    result = mod_gov.reconcile(
+        data_dir, corpus=args.corpus, income=args.income,
+        invest=args.invest, living=args.living, impulse=args.impulse,
+        today=_today(args))
+    return _emit(result, 0 if result.get("ok") else 1)
 
 
 def cmd_calibrate(args) -> int:
     data_dir = contract_io.resolve_data_dir(args.data_dir)
-    contract = contract_io.read_contract(data_dir)
-    return _emit(mod_cal.calibrate(contract))
+    result = mod_cal.run_calibrate(data_dir, today=_today(args), force=args.force)
+    return _emit(result, 0 if result.get("ok") else 1)
 
 
 def cmd_reward(args) -> int:
-    # [STUB] §6.3 里程碑奖励支取：F6 校验 + reward_quota 递减 + reward_log；后续 PR 实装
-    return _emit({"ok": True, "stub": True,
-                  "message": "reward 骨架占位（§6.3），待后续 PR 实装"})
+    data_dir = contract_io.resolve_data_dir(args.data_dir)
+    if args.action == "status":
+        contract = contract_io.read_contract(data_dir)
+        result = mod_reward.reward_status(contract)
+    elif args.action == "unlock":
+        result = mod_reward.unlock_rewards(data_dir)
+    else:  # claim
+        if args.objective is None or args.amount is None:
+            return _emit({"ok": False, "error": "invalid",
+                          "message": "claim 须提供 --objective 与 --amount"}, 4)
+        result = mod_reward.claim_reward(
+            data_dir, objective=args.objective, amount=args.amount,
+            purpose=args.purpose or "", today=_today(args))
+    return _emit(result, 0 if result.get("ok") else 1)
+
+
+def cmd_reset(args) -> int:
+    data_dir = contract_io.resolve_data_dir(args.data_dir)
+    objectives = [_parse_objective(s) for s in (args.objective or [])]
+    result = mod_gov.reset_contract(
+        data_dir, confirm=args.confirm, corpus=args.corpus,
+        monthly_contribution=args.monthly,
+        objectives=objectives or None, reason=args.reason or "",
+        today=_today(args))
+    return _emit(result, 0 if result.get("ok") else 1)
+
+
+def cmd_appeal(args) -> int:
+    data_dir = contract_io.resolve_data_dir(args.data_dir)
+    if args.override:
+        result = mod_gov.override(
+            data_dir, request_id=args.request_id, confirm=args.confirm,
+            today=_today(args))
+    else:
+        result = mod_gov.appeal(
+            data_dir, request_id=args.request_id, reason=args.reason or "",
+            today=_today(args))
+    return _emit(result, 0 if result.get("ok") else 1)
+
+
+def cmd_objective(args) -> int:
+    data_dir = contract_io.resolve_data_dir(args.data_dir)
+    result = mod_cal.transition_objective(
+        data_dir, args.name, args.to, confirm=args.confirm)
+    return _emit(result, 0 if result.get("ok") else 1)
 
 
 def cmd_log(args) -> int:
@@ -123,6 +183,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="数据目录（优先级：本参数 > SELFTRUST_DATA_DIR > <cwd>/memory/trust/）")
     p.add_argument("--json", action="store_true", default=True,
                    help="结构化 JSON 输出（默认且唯一格式）")
+    p.add_argument("--today", default=None,
+                   help="覆盖当前日期 YYYY-MM-DD（测试/重放用）")
     sub = p.add_subparsers(dest="command", required=True)
 
     sp = sub.add_parser("init", help="懒人一键初始化（§7.1）")
@@ -133,23 +195,62 @@ def build_parser() -> argparse.ArgumentParser:
                     help='目标 "名称:目标额:期限"（1~3 个，可重复传）')
     sp.set_defaults(func=cmd_init)
 
-    sp = sub.add_parser("judge", help="支取审批统一判定（§4.4）")
-    sp.add_argument("--amount", type=float, required=True)
-    sp.add_argument("--category", required=True)
+    sp = sub.add_parser("judge", help="支取审批统一判定 + 冷静期生命周期（§4.4/§5.1）")
+    sp.add_argument("--amount", type=float, default=None)
+    sp.add_argument("--category", default=None)
     sp.add_argument("--planned", action="store_true", help="是否计划内")
+    sp.add_argument("--action", default="submit",
+                    choices=["submit", "withdraw", "finalize", "expire", "reminders"],
+                    help="submit 提交审批 | withdraw 撤回 | finalize 确认执行 | "
+                         "expire 到期终裁 | reminders 双阶段提醒数据")
+    sp.add_argument("--request-id", default=None, help="冷静期申请 id")
     sp.set_defaults(func=cmd_judge)
 
-    sp = sub.add_parser("report", help="记账报表（§6.1）[stub]")
+    sp = sub.add_parser("report", help="记账报表 + 月度快照（§6.1）")
     sp.set_defaults(func=cmd_report)
 
-    sp = sub.add_parser("reconcile", help="hybrid 对账（§3.2）[stub]")
+    sp = sub.add_parser("reconcile", help="hybrid 对账（§3.2，用户拍板修正）")
+    sp.add_argument("--corpus", type=float, default=None, help="修正后的资金池余额")
+    sp.add_argument("--income", type=float, default=None, help="当月实际注入实绩")
+    sp.add_argument("--invest", type=float, default=None)
+    sp.add_argument("--living", type=float, default=None)
+    sp.add_argument("--impulse", type=float, default=None)
     sp.set_defaults(func=cmd_reconcile)
 
-    sp = sub.add_parser("calibrate", help="月度校准（§6.2）[stub]")
+    sp = sub.add_parser("calibrate", help="月度校准（§6.2/§6.4）")
+    sp.add_argument("--force", action="store_true", help="同月强制重跑")
     sp.set_defaults(func=cmd_calibrate)
 
-    sp = sub.add_parser("reward", help="里程碑奖励支取（§6.3）[stub]")
+    sp = sub.add_parser("reward", help="里程碑奖励（§6.3）")
+    sp.add_argument("--action", default="status",
+                    choices=["status", "unlock", "claim"])
+    sp.add_argument("--objective", default=None)
+    sp.add_argument("--amount", type=float, default=None)
+    sp.add_argument("--purpose", default=None)
     sp.set_defaults(func=cmd_reward)
+
+    sp = sub.add_parser("reset", help="记账重置（§7.1.1，二次确认+审计保留）")
+    sp.add_argument("--confirm", action="store_true", help="二次确认（确认重置）")
+    sp.add_argument("--corpus", type=float, default=None)
+    sp.add_argument("--monthly", type=float, default=None)
+    sp.add_argument("--objective", action="append", default=None)
+    sp.add_argument("--reason", default=None)
+    sp.set_defaults(func=cmd_reset)
+
+    sp = sub.add_parser("appeal", help="申诉 / 人工覆写（§5.2）")
+    sp.add_argument("--request-id", required=True)
+    sp.add_argument("--reason", default=None)
+    sp.add_argument("--override", action="store_true",
+                    help="满 3 次申诉后的人工覆写")
+    sp.add_argument("--confirm", action="store_true",
+                    help="覆写确认（知悉目标延后时长）")
+    sp.set_defaults(func=cmd_appeal)
+
+    sp = sub.add_parser("objective", help="目标生命周期迁移（§6.4，用户显式确认）")
+    sp.add_argument("--name", required=True)
+    sp.add_argument("--to", required=True, choices=["completed", "archived"])
+    sp.add_argument("--confirm", action="store_true")
+    sp.set_defaults(func=cmd_objective)
 
     sp = sub.add_parser("log", help="审计留痕只读查询（§10.1）")
     sp.add_argument("--name", default="approval_log",

@@ -272,6 +272,22 @@ def _apply_changes(contract: dict[str, Any], changes: dict[str, Any]):
         new["rigid_annual_expenses"] = [x for x in lst if x.get("name") != name]
         touched.add("rigid_annual_expenses")
 
+    # —— 支出类目词汇表（allowed_categories，嵌套于 distribution_rules）——
+    # 属配置区但非「削弱自身」，走 §5.4 二次确认、立即生效、不进冷却窗。
+    for name in changes.get("add_category", []):
+        cats = new.setdefault("distribution_rules", {}).setdefault("allowed_categories", [])
+        if name not in cats:
+            cats.append(name)
+        touched.add("distribution_rules")
+
+    for name in changes.get("remove_category", []):
+        dr = new.get("distribution_rules", {})
+        cats = dr.get("allowed_categories", [])
+        if name not in cats:
+            raise ValueError(f"支出类目词汇表中不存在: {name}")
+        dr["allowed_categories"] = [c for c in cats if c != name]
+        touched.add("distribution_rules")
+
     hp = changes.get("record_home_purchase")
     if hp:
         # 首付（打 liquid）→ corpus 减；融资部分 → 变负债（含月供）
@@ -313,6 +329,7 @@ def build_changes(args) -> dict[str, Any]:
         "whitelist_add": [], "whitelist_remove": [],
         "add_liability": [], "remove_liability": [],
         "add_rigid": [], "remove_rigid": [],
+        "add_category": [], "remove_category": [],
         "record_home_purchase": None,
     }
     for item in (args.set or []):
@@ -340,6 +357,10 @@ def build_changes(args) -> dict[str, Any]:
         changes["add_rigid"].append(_parse_rigid(spec))
     for name in (getattr(args, "remove_rigid", None) or []):
         changes["remove_rigid"].append(name)
+    for name in (getattr(args, "add_category", None) or []):
+        changes["add_category"].append(name)
+    for name in (getattr(args, "remove_category", None) or []):
+        changes["remove_category"].append(name)
     for spec in (getattr(args, "record_home_purchase", None) or []):
         if changes["record_home_purchase"] is not None:
             raise ValueError("--record-home-purchase 每次只能记录一笔")
@@ -348,7 +369,8 @@ def build_changes(args) -> dict[str, Any]:
         raise ValueError(
             "未提供任何修改（--set / --add-objective / --whitelist-add / "
             "--whitelist-remove / --add-liability / --remove-liability / "
-            "--add-rigid / --remove-rigid / --record-home-purchase 至少一项）")
+            "--add-rigid / --remove-rigid / --add-category / --remove-category / "
+            "--record-home-purchase 至少一项）")
     return changes
 
 

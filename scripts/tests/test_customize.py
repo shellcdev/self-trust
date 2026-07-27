@@ -181,3 +181,55 @@ def test_build_changes_whitelist_add_needs_caps(tmp_data_dir):
                     per_tx_cap=None, annual_cap=None, whitelist_remove=None)
     with pytest.raises(ValueError):
         mod_customize.build_changes(bad)
+
+
+# ---------------------------------------------------------- 支出类目词汇表
+def _changes_for_category(add=None, remove=None) -> dict:
+    return {"set": [], "add_objective": [], "whitelist_add": [],
+            "whitelist_remove": [], "add_liability": [], "remove_liability": [],
+            "add_rigid": [], "remove_rigid": [],
+            "add_category": add or [], "remove_category": remove or [],
+            "record_home_purchase": None}
+
+
+def test_add_category_appends_and_dedup(tmp_data_dir, base_contract):
+    # 新增「旅行」，立即落盘、不进冷却窗（非削弱自身）
+    changes = _changes_for_category(add=["旅行"])
+    preview = mod_customize.preview(tmp_data_dir, changes)
+    assert "distribution_rules" in preview["touched_guard_fields"]
+    assert preview["cooldown_required"] is False  # allowed_categories 改动不属削弱
+    res = mod_customize.apply(tmp_data_dir, changes, confirm=True,
+                              token=preview["token"], reason="加旅行类目")
+    assert res["ok"] and res["applied"] and not res.get("pending")
+    after = contract_io.read_contract(tmp_data_dir)
+    assert "旅行" in after["distribution_rules"]["allowed_categories"]
+    # 重复追加应去重
+    p2 = mod_customize.preview(tmp_data_dir, _changes_for_category(add=["旅行"]))
+    mod_customize.apply(tmp_data_dir, _changes_for_category(add=["旅行"]),
+                        confirm=True, token=p2["token"], reason="重复加")
+    after2 = contract_io.read_contract(tmp_data_dir)
+    assert after2["distribution_rules"]["allowed_categories"].count("旅行") == 1
+
+
+def test_remove_category(tmp_data_dir, base_contract):
+    changes = _changes_for_category(add=["旅行", "宠物"])
+    p = mod_customize.preview(tmp_data_dir, changes)
+    mod_customize.apply(tmp_data_dir, changes, confirm=True,
+                        token=p["token"], reason="加两类目")
+    after = contract_io.read_contract(tmp_data_dir)
+    assert {"旅行", "宠物"} <= set(after["distribution_rules"]["allowed_categories"])
+    # 移除「旅行」
+    rm = _changes_for_category(remove=["旅行"])
+    p2 = mod_customize.preview(tmp_data_dir, rm)
+    mod_customize.apply(tmp_data_dir, rm, confirm=True,
+                        token=p2["token"], reason="撤旅行")
+    after2 = contract_io.read_contract(tmp_data_dir)
+    assert "旅行" not in after2["distribution_rules"]["allowed_categories"]
+    assert "宠物" in after2["distribution_rules"]["allowed_categories"]
+
+
+def test_remove_category_missing_raises(tmp_data_dir, base_contract):
+    import pytest
+    with pytest.raises(ValueError):
+        mod_customize.preview(tmp_data_dir, _changes_for_category(remove=["不存在的类目"]))
+

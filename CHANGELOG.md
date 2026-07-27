@@ -1,5 +1,14 @@
 # CHANGELOG — self-trust
 
+## [0.7.2] - 2026-07-28
+
+### Added
+- **支出类目词汇表专用开关**（`cli.py customize --add-category / --remove-category`，`modules/customize.py`）：原仅能 `--set distribution_rules.allowed_categories=...` 整表替换（且无专用开关）。`allowed_categories` 嵌套于 `distribution_rules`（已在 `FIELD_ZONES` 注册为 CONFIG 护栏字段），故专用开关直接复用现有 §5.4 二次确认校验、**不触发冷却窗**（因不改 `invest_ratio`）；`--add-category` 去重追加、`--remove-category` 移除（缺失报错）。
+- **选项 A 落地**：judge 当前**不强制校验** `--category` 是否落在 `allowed_categories` 内（保持自由文本 + 词汇表作推荐清单）。若需「超纲类目直接驳回、须先 `--add-category`」的硬约束（选项 B），仅需给 judge 加一步成员校验，开关已就绪。
+
+### Changed
+- 测试 241 → 244：test_customize 新增 3 例（加类目去重追加+立即落盘不进冷却窗、移除、移除缺失报错）。
+
 ## [0.7.1] - 2026-07-28
 
 ### Fixed

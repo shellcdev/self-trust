@@ -437,6 +437,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="新增刚性年支出 名称:金额[:due_month]")
     sp.add_argument("--remove-rigid", action="append", default=None,
                     help="移除刚性年支出 名称")
+    sp.add_argument("--add-category", action="append", default=None,
+                    help="新增支出类目词汇（allowed_categories，嵌套于 distribution_rules），"
+                         "可重复；去重追加，不修改 invest_ratio 故不触发冷却窗")
+    sp.add_argument("--remove-category", action="append", default=None,
+                    help="移除支出类目词汇 名称（不存在则报错）")
     sp.add_argument("--record-home-purchase", action="append", default=None,
                     help="记录已购房产（首付+房贷落账）房价:首付比例[:期限年[:利率]]")
     sp.add_argument("--review", action="store_true",

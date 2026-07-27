@@ -28,6 +28,7 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 | 记账确认执行 | 到期前确认终裁：`python scripts/cli.py judge --action finalize --request-id <id>` | references/approval.md |
 | （调度）到期终裁 | 过期申请按原判定收尾：`python scripts/cli.py judge --action expire [--request-id <id>]`（省略 id 处理全部到期项） | references/approval.md |
 | （调度）冷静期提醒 | 双阶段提醒数据：`python scripts/cli.py judge --action reminders` | references/approval.md |
+| 融资购房审查 | 大额资产购买拆**首付(打 liquid)+房贷(变负债+月供)**评估：`python scripts/cli.py judge --amount 1000000 --category 投资 --financed-amount 700000 [--financed-term-years 30] [--financed-rate 0.04]`（判定看①首付是否击穿流动安全垫②月供是否≤月度净流入；首付=总额-贷款） | references/approval.md |
 | 记账申诉 | 同一逻辑重审+计数：`python scripts/cli.py appeal --request-id <id> --reason "理由"` | references/exceptions.md |
 | 记账覆写（满 3 次申诉） | 人工兜底放行：`python scripts/cli.py appeal --request-id <id> --override --confirm` | references/exceptions.md |
 | 记账报表 | 双轨进度条+趋势+当月快照：`python scripts/cli.py report` | references/report.md |
@@ -44,6 +45,8 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 | 记账日志 [类型] | 审计只读查询：`python scripts/cli.py log --name approval_log\|appeal_log\|override_log\|reward_log\|monthly_history` | references/report.md |
 | 记账演示 | 三场景真实干跑（不落盘不影响真实账户）：`python scripts/cli.py demo`（init 回执也自动附 demo 区块） | references/init.md |
 | 记账白名单 加/删 | 极速审批应急类目管理（记账自定义子集）：`python scripts/cli.py customize --whitelist-add 名称 --per-tx-cap 元 --annual-cap 元` / `--whitelist-remove 名称`（核心护栏字段，触发 §5.4 风险提示） | references/exceptions.md |
+| 记账负债/刚性支出 增删 | 负债与刚性年支出建账（如实上报，影响净资产口径）：`python scripts/cli.py customize --add-liability "房贷:800000:5000:0.04"` / `--remove-liability 房贷` / `--add-rigid "保费:12000:3"` / `--remove-rigid 保费` | references/exceptions.md |
+| 记账记录购房 | 已购房产落账（首付打 liquid + 房贷变负债）：`python scripts/cli.py customize --record-home-purchase "1000000:0.3"`（房价:首付比例[:期限年[:利率]]；确认后 corpus-=首付、liabilities 追加房贷及月供） | references/exceptions.md |
 | 第三方导入 | 待实施（见 STATUS.md）；`imported_pending` 审批拦截已实装 | 对应 references |
 
 **全局参数**（所有子命令通用，只说明这一次）：
@@ -70,4 +73,4 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 
 ## 状态
 
-核心闭环（初始化→审批→冷静期→报表→校准→奖励→申诉/覆写→重置→对账）+ §7.2 演示干跑 + §3.1 平滑过渡计数器 + 记账自定义（§5.4 闸门入口，含模式切换/白名单增删/**冷却窗**）已实装并通过测试（217 单测 + 12 端到端）。剩余待实施：第三方导入。实现进度见 STATUS.md（真相源）。
+核心闭环（初始化→审批→冷静期→报表→校准→奖励→申诉/覆写→重置→对账）+ §7.2 演示干跑 + §3.1 平滑过渡计数器 + 记账自定义（§5.4 闸门入口，含模式切换/白名单增删/**冷却窗**）+ **负债/房贷建模**（净资产决策口径 + 融资购房 + 负债/刚性支出建账 + 记录购房落账）已实装并通过测试（227 单测 + 12 端到端）。剩余待实施：第三方导入。实现进度见 STATUS.md（真相源）。

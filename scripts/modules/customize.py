@@ -28,6 +28,7 @@ from core import audit as audit_io
 from core import contract as contract_io
 from core.contract import _validate_zones
 from core.models import CORE_GUARD_FIELDS, living_baseline_value
+from modules.judge import estimate_mortgage_monthly as _est_mortgage
 
 
 def _now() -> str:
@@ -81,6 +82,56 @@ def _parse_objective(spec: str) -> dict[str, Any]:
 def _top_field(path: str) -> str:
     """dotpath 的顶层字段名（用于 §5.4 护栏归属判定）。"""
     return path.split(".", 1)[0]
+
+
+def _parse_liability(spec: str) -> dict[str, Any]:
+    """解析 --add-liability "名称:余额[:月供[:年利率]]"。"""
+    parts = spec.split(":")
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        raise ValueError("--add-liability 格式应为 名称:余额[:月供[:年利率]]")
+    return {
+        "name": parts[0],
+        "balance": float(parts[1]),
+        "monthly_payment": float(parts[2]) if len(parts) > 2 and parts[2] else 0.0,
+        "annual_rate": float(parts[3]) if len(parts) > 3 and parts[3] else 0.0,
+    }
+
+
+def _parse_rigid(spec: str) -> dict[str, Any]:
+    """解析 --add-rigid "名称:金额[:due_month]"。"""
+    parts = spec.split(":")
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        raise ValueError("--add-rigid 格式应为 名称:金额[:due_month]")
+    return {
+        "name": parts[0],
+        "amount": float(parts[1]),
+        "due_month": int(parts[2]) if len(parts) > 2 and parts[2] else None,
+    }
+
+
+def _parse_home_purchase(spec: str) -> dict[str, Any]:
+    """解析 --record-home-purchase "房价:首付比例[:期限年[:利率]]"。
+
+    首付比例 0~1（如 0.3 = 首付 30%）。返回含计算结果的规范：
+    down_payment / financed / mortgage_monthly。
+    """
+    parts = spec.split(":")
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        raise ValueError("--record-home-purchase 格式应为 房价:首付比例[:期限年[:利率]]")
+    price = float(parts[0])
+    down_ratio = float(parts[1])
+    if not (0.0 <= down_ratio <= 1.0):
+        raise ValueError("首付比例须介于 0~1（如 0.3 表示首付 30%）")
+    term = float(parts[2]) if len(parts) > 2 and parts[2] else 30.0
+    rate = float(parts[3]) if len(parts) > 3 and parts[3] else 0.04
+    down_payment = price * down_ratio              # 首付（打 liquid）
+    financed = price * (1.0 - down_ratio)          # 贷款（变负债 + 月供）
+    mortgage_monthly = _est_mortgage(financed, term, rate)
+    return {
+        "price": price, "down_ratio": down_ratio, "term_years": term,
+        "rate": rate, "down_payment": down_payment, "financed": financed,
+        "mortgage_monthly": mortgage_monthly,
+    }
 
 
 def _risk_warnings(contract: dict[str, Any], changed: dict[str, Any]) -> list[str]:
@@ -199,6 +250,39 @@ def _apply_changes(contract: dict[str, Any], changes: dict[str, Any]):
         new["fast_track_whitelist"] = [w for w in wl if w.get("name") != name]
         touched.add("fast_track_whitelist")
 
+    for lb in changes.get("add_liability", []):
+        new.setdefault("liabilities", []).append(lb)
+        touched.add("liabilities")
+
+    for name in changes.get("remove_liability", []):
+        lst = new.get("liabilities", [])
+        if not any(x.get("name") == name for x in lst):
+            raise ValueError(f"负债清单中不存在: {name}")
+        new["liabilities"] = [x for x in lst if x.get("name") != name]
+        touched.add("liabilities")
+
+    for rg in changes.get("add_rigid", []):
+        new.setdefault("rigid_annual_expenses", []).append(rg)
+        touched.add("rigid_annual_expenses")
+
+    for name in changes.get("remove_rigid", []):
+        lst = new.get("rigid_annual_expenses", [])
+        if not any(x.get("name") == name for x in lst):
+            raise ValueError(f"刚性年支出清单中不存在: {name}")
+        new["rigid_annual_expenses"] = [x for x in lst if x.get("name") != name]
+        touched.add("rigid_annual_expenses")
+
+    hp = changes.get("record_home_purchase")
+    if hp:
+        # 首付（打 liquid）→ corpus 减；融资部分 → 变负债（含月供）
+        new["corpus"] = float(new.get("corpus", 0)) - hp["down_payment"]
+        new.setdefault("liabilities", []).append({
+            "name": "房贷", "balance": hp["financed"],
+            "monthly_payment": hp["mortgage_monthly"], "annual_rate": hp["rate"],
+        })
+        touched.add("corpus")
+        touched.add("liabilities")
+
     return new, touched
 
 
@@ -227,6 +311,9 @@ def build_changes(args) -> dict[str, Any]:
     changes: dict[str, Any] = {
         "set": [], "add_objective": [],
         "whitelist_add": [], "whitelist_remove": [],
+        "add_liability": [], "remove_liability": [],
+        "add_rigid": [], "remove_rigid": [],
+        "record_home_purchase": None,
     }
     for item in (args.set or []):
         if "=" not in item:
@@ -245,10 +332,23 @@ def build_changes(args) -> dict[str, Any]:
              "annual_cap": float(anc)})
     if getattr(args, "whitelist_remove", None):
         changes["whitelist_remove"].append(args.whitelist_remove)
+    for spec in (getattr(args, "add_liability", None) or []):
+        changes["add_liability"].append(_parse_liability(spec))
+    for name in (getattr(args, "remove_liability", None) or []):
+        changes["remove_liability"].append(name)
+    for spec in (getattr(args, "add_rigid", None) or []):
+        changes["add_rigid"].append(_parse_rigid(spec))
+    for name in (getattr(args, "remove_rigid", None) or []):
+        changes["remove_rigid"].append(name)
+    for spec in (getattr(args, "record_home_purchase", None) or []):
+        if changes["record_home_purchase"] is not None:
+            raise ValueError("--record-home-purchase 每次只能记录一笔")
+        changes["record_home_purchase"] = _parse_home_purchase(spec)
     if not any(changes.values()):
         raise ValueError(
             "未提供任何修改（--set / --add-objective / --whitelist-add / "
-            "--whitelist-remove 至少一项）")
+            "--whitelist-remove / --add-liability / --remove-liability / "
+            "--add-rigid / --remove-rigid / --record-home-purchase 至少一项）")
     return changes
 
 
@@ -271,6 +371,7 @@ def preview(data_dir: Path, changes: dict[str, Any]) -> dict[str, Any]:
         "risk_warnings": risks,
         "cooldown_required": weakening,
         "token": tok,
+        "home_purchase": changes.get("record_home_purchase"),
         "message": (
             ("⚠️ 检测到「削弱自身」的护栏修改，确认后将进入 1 个自然日冷静窗"
              "（窗内可无理由撤回，到期前二次提醒并自动生效），不立即落盘。"
@@ -353,6 +454,7 @@ def apply(data_dir: Path, changes: dict[str, Any], *, confirm: bool,
         "changed_fields": changed,
         "touched_guard_fields": touched_guard,
         "risk_warnings": risks,
+        "home_purchase": changes.get("record_home_purchase"),
         "note": "配置区增量覆盖完成；审计区 override_log 已追加（§10.1 仅追加）",
     }
 

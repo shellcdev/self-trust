@@ -81,7 +81,11 @@ def cmd_judge(args) -> int:
                           "message": "judge 提交须提供 --amount 与 --category"}, 4)
         result = mod_judge.submit(
             data_dir, amount=args.amount, category=args.category,
-            planned=args.planned, today=_today(args))
+            planned=args.planned, today=_today(args),
+            financed_amount=args.financed_amount,
+            financed_term_years=args.financed_term_years,
+            financed_rate=args.financed_rate,
+            financed_monthly=args.financed_monthly)
     elif action in ("withdraw", "finalize") and not args.request_id:
         result = {"ok": False, "error": "invalid",
                   "message": f"{action} 须提供 --request-id"}
@@ -240,6 +244,14 @@ def build_parser() -> argparse.ArgumentParser:
                     help="submit 提交审批 | withdraw 撤回 | finalize 确认执行 | "
                          "expire 到期终裁 | reminders 双阶段提醒数据")
     sp.add_argument("--request-id", default=None, help="冷静期申请 id")
+    sp.add_argument("--financed-amount", type=float, default=0.0,
+                    help="融资购房：贷款金额（>0 启用融资模式；首付=总额-本值）")
+    sp.add_argument("--financed-term-years", type=float, default=None,
+                    help="融资购房：贷款期限（年，默认 30）")
+    sp.add_argument("--financed-rate", type=float, default=None,
+                    help="融资购房：贷款年利率（默认 0.04）")
+    sp.add_argument("--financed-monthly", type=float, default=None,
+                    help="融资购房：已知月供（给定则跳过估算）")
     sp.set_defaults(func=cmd_judge)
 
     sp = sub.add_parser("demo", help="三场景模拟演示（§7.2，干跑不落盘不影响真实账户）")
@@ -308,6 +320,16 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--annual-cap", type=float, default=None,
                     help="白名单年上限（须与 --whitelist-add 同传）")
     sp.add_argument("--whitelist-remove", default=None, help="移除极速审批类目 名称")
+    sp.add_argument("--add-liability", action="append", default=None,
+                    help="新增负债 名称:余额[:月供[:年利率]]")
+    sp.add_argument("--remove-liability", action="append", default=None,
+                    help="移除负债 名称")
+    sp.add_argument("--add-rigid", action="append", default=None,
+                    help="新增刚性年支出 名称:金额[:due_month]")
+    sp.add_argument("--remove-rigid", action="append", default=None,
+                    help="移除刚性年支出 名称")
+    sp.add_argument("--record-home-purchase", action="append", default=None,
+                    help="记录已购房产（首付+房贷落账）房价:首付比例[:期限年[:利率]]")
     sp.add_argument("--review", action="store_true",
                     help="冷却窗复查：懒惰扫描过期项自动生效，列出窗内待决修改 + 二次提醒")
     sp.add_argument("--withdraw", action="store_true",

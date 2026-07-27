@@ -38,6 +38,24 @@ LAG_MATERIAL = 0.05                   # lag ≥ 5pct 视为「实质落后」（
 OPT_CUSHION_MULT = {"wealth": 1.2, "balanced": 1.0, "objective": 1.0}
 OPT_CUSHION_MULT_UNPLANNED = {"wealth": 1.2, "balanced": 1.0, "objective": 1.3}
 
+# 融资购房默认参数（§4.4 融资购房可行性）
+DEFAULT_MORTGAGE_TERM_YEARS = 30
+DEFAULT_MORTGAGE_RATE = 0.04
+
+
+def estimate_mortgage_monthly(principal: float, term_years: float,
+                              annual_rate: float) -> float:
+    """等额本息月供（确定性公式，禁止心算，调用方须原样引用返回）。"""
+    n = int(round(float(term_years) * 12))
+    p = float(principal)
+    if n <= 0:
+        return p  # 退化：无期限视作一次性
+    r = float(annual_rate) / 12.0
+    if r == 0:
+        return p / n
+    f = (1.0 + r) ** n
+    return p * r * f / (f - 1.0)
+
 
 def check_whitelist(contract: dict[str, Any], category: str,
                     amount: float) -> dict[str, Any]:
@@ -127,8 +145,19 @@ def judge(
     category: str,
     planned: bool,
     today: date | None = None,
+    financed_amount: float = 0.0,
+    financed_term_years: float | None = None,
+    financed_rate: float | None = None,
+    financed_monthly: float | None = None,
 ) -> dict[str, Any]:
     """§4.4 统一判定入口（纯函数，不落盘）。返回结构化 JSON。
+
+    融资购房（financed_amount>0）：大额资产购买拆为「首付(打 liquid) + 房贷(变负债+月供)」。
+    决策口径：
+    - 非融资：remaining = 净资产(corpus-负债) - amount（§4.4 line360 净资产口径）；
+    - 融资：liquid_remaining = corpus - 首付（净资产不因按揭变，故用流动口径）；
+      另加「月供可覆盖性」硬约束（月供 ≤ 月度净流入）。
+    目标 lag 一律用 actual_cash_out（非融资=全额，融资=首付）测算。
 
     LLM 铁律：禁止心算，数字必须原样引用本函数输出。
     """
@@ -174,9 +203,36 @@ def judge(
         r_gross=cp.get("r_gross", 0.05))
     delay_simple = F.f5_impact_simple(amount, invest_nominal)
 
-    # ---- 白名单 / 冷静期 ----
-    wl = check_whitelist(contract, category, amount)
-    cooldown_triggered = amount > threshold and not wl["fast_track"]
+    # ---- 融资购房（§4.4 融资购房可行性）----
+    financed = float(financed_amount or 0) > 0
+    if financed:
+        down_payment = max(float(amount) - float(financed_amount), 0.0)
+        term = financed_term_years if financed_term_years is not None \
+            else DEFAULT_MORTGAGE_TERM_YEARS
+        rate = financed_rate if financed_rate is not None \
+            else DEFAULT_MORTGAGE_RATE
+        if financed_monthly is not None:
+            mortgage_monthly = float(financed_monthly)
+        else:
+            mortgage_monthly = estimate_mortgage_monthly(
+                float(financed_amount), term, rate)
+        actual_cash_out = down_payment
+        # 净资产不因按揭变化（房产+负债抵消），流动口径用 corpus-首付
+        remaining = f0["corpus"] - down_payment
+        debt_service_ok = (
+            mortgage_monthly <= f0["monthly_net"]
+            if f0["monthly_net"] > 0 else mortgage_monthly <= 0)
+    else:
+        down_payment = float(amount)
+        mortgage_monthly = 0.0
+        actual_cash_out = float(amount)
+        # §4.4 line360 净资产口径：remaining = 净资产 - 支出（负债高时自动收敛）
+        remaining = f0["net_assets"] - float(amount)
+        debt_service_ok = True
+
+    # ---- 白名单 / 冷静期（触发额用 actual_cash_out）----
+    wl = check_whitelist(contract, category, actual_cash_out)
+    cooldown_triggered = actual_cash_out > threshold and not wl["fast_track"]
 
     # ---- §7 optimization_goal 调度：判定边界乘数（不改 F1 本值）----
     goal = contract.get("optimization_goal", "balanced")
@@ -184,16 +240,20 @@ def judge(
     mult = mult_table.get(goal, 1.0)
     judge_cushion = cushion * mult
 
-    # ---- lag 恶化校验（F4 + F7 遍历 objectives）----
+    # ---- lag 恶化校验（F4 + F7 遍历 objectives，用实际现金流出测算）----
     impacted, worsened, severe = _objective_impacts(
-        contract, amount, planned, invest_nominal, invest_real, inflation, today)
+        contract, actual_cash_out, planned, invest_nominal, invest_real,
+        inflation, today)
 
     # ---- §4.4 三场景路由（资金/垫口径 + 目标进度不恶化条件）----
-    remaining = f0["corpus"] - amount
     if severe:
         scene, result = "C", "驳回"
         summary = ("严重拖慢目标达成：实质落后目标将被进一步延后超过 "
                    f"{SEVERE_DELAY_MONTHS:g} 个月（§4.4 场景 C）")
+    elif financed and not debt_service_ok:
+        scene, result = "C", "驳回"
+        summary = (f"月供 {mortgage_monthly:g} 超过月度净流入 {f0['monthly_net']:g}，"
+                   "债务无法覆盖（月供压垮现金流，§4.4 融资购房可行性）")
     elif remaining >= judge_cushion and not worsened:
         scene, result = "A", "批准"
         summary = "扣除后仍在安全垫之上且不恶化目标进度，合理享受额度正常使用"
@@ -236,6 +296,12 @@ def judge(
             "category": category,
             "planned": planned,
             "remaining_after": remaining,
+            "financed": financed,
+            "down_payment": down_payment,
+            "financed_amount": float(financed_amount or 0),
+            "mortgage_monthly": mortgage_monthly,
+            "debt_service_ok": debt_service_ok,
+            "actual_cash_out": actual_cash_out,
         },
         "impact": {
             "delay_months_simple": delay_simple,
@@ -270,16 +336,23 @@ def submit(
     category: str,
     planned: bool,
     today: date | None = None,
+    financed_amount: float = 0.0,
+    financed_term_years: float | None = None,
+    financed_rate: float | None = None,
+    financed_monthly: float | None = None,
 ) -> dict[str, Any]:
     """审批提交编排：judge → 冷静期入队 / 白名单额度记账 → F8 快照落审计。
 
     引擎只写运行态区（pending_requests / used_annual / whitelist_cap_year），
-    契约配置区不动（§10.3）。
+    契约配置区不动（§10.3）。融资购房参数透传 judge；落盘仅记录，不改 corpus/负债
+    （首付支取 / 房贷负债由用户经 reconcile / customize --record-home-purchase 显式落账）。
     """
     today = today or date.today()
     contract = contract_io.read_contract(data_dir)
-    result = judge(contract, amount=amount, category=category,
-                   planned=planned, today=today)
+    result = judge(
+        contract, amount=amount, category=category, planned=planned, today=today,
+        financed_amount=financed_amount, financed_term_years=financed_term_years,
+        financed_rate=financed_rate, financed_monthly=financed_monthly)
     if not result.get("ok"):
         return result
 
@@ -300,7 +373,12 @@ def submit(
             planned=planned,
             expire_at=(now + timedelta(days=days)).isoformat(timespec="seconds"),
         )
-        entry = req.__dict__ | {"decision": result["decision"]}
+        entry = req.__dict__ | {
+            "decision": result["decision"],
+            "financed_amount": float(financed_amount or 0),
+            "down_payment": result["inputs"].get("down_payment", float(amount)),
+            "mortgage_monthly": result["inputs"].get("mortgage_monthly", 0.0),
+        }
         contract.setdefault("pending_requests", []).append(entry)
         request_id = req.request_id
         result["request_id"] = request_id

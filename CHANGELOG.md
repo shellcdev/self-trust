@@ -1,5 +1,14 @@
 # CHANGELOG — self-trust
 
+## [0.6.0] - 2026-07-28
+
+### Added
+- **净资产口径决策**（修复 §4.4 line360 口径 bug）：judge 非融资场景 `remaining = 净资产(corpus - 负债)` 替代原 `corpus`，负债真正参与判定（负债为空时 net==corpus，向后兼容）。
+- **融资购房模式**：`judge --financed-amount >0` 将大额资产购买拆为「首付(打 liquid) + 房贷(变负债 + 月供)」。判定：① 流动口径 `remaining = corpus - 首付` 是否击穿安全垫；② 月供 ≤ 月度净流入（债务可覆盖性硬约束，否则 C 驳回）；目标 lag 用首付测算；冷静期触发额用首付。月供默认等额本息估算（700K/30y/4% ≈ 3341.91/月），可用 `--financed-term-years` / `--financed-rate` / `--financed-monthly` 覆盖。
+- **负债/刚性支出建账**：`customize --add-liability "名:余额[:月供[:年利率]]"` / `--remove-liability 名` / `--add-rigid "名:金额[:due_month]"` / `--remove-rigid 名`，经 §5.4 确认立即落盘（如实上报，影响净资产口径）。
+- **记录购房落账**：`customize --record-home-purchase "房价:首付比例[:期限年[:利率]]"`，确认后 `corpus -= 首付` 且 `liabilities` 追加房贷（含月供估算），与 judge 融资评估配套闭环。
+- 测试 217 → 227：新增 test_liability（净资产口径对比 / 负债增删+judge 因子 / 刚性增 / 融资购房可行批准 / 首付超流动驳回 / 月供不可覆盖驳回 / 融资冷静期 / 记录购房落账）。
+
 ## [0.5.0] - 2026-07-27
 
 ### Added

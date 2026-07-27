@@ -97,6 +97,11 @@ def _objective_impacts(
     impacted: list[dict[str, Any]] = []
     worsened = False
     severe = False
+    # H3 修复：weight 是相对权重，分摊须除 active 目标总权重，否则多目标时
+    # 各目标 share 直接相加会超过实际支出（影响被放大、lag 恶化判定过于激进）。
+    active_objs = [o for o in contract.get("objectives", [])
+                   if (o.get("status") or "active") == "active"]
+    total_weight = sum(float(o.get("weight", 1.0)) for o in active_objs) or 1.0
     for o in contract.get("objectives", []):
         if (o.get("status") or "active") != "active":
             continue
@@ -105,7 +110,7 @@ def _objective_impacts(
         target = o.get("target_amount")
         lag_info = F.f4_lag(o.get("current_amount", 0), target, start,
                             deadline, today) if deadline and start else None
-        share = float(amount) * float(o.get("weight", 1.0))
+        share = float(amount) * float(o.get("weight", 1.0)) / total_weight
         real = F.f7_real_pace(share, o.get("current_amount", 0), target,
                               deadline, today, invest_real,
                               inflation=inflation) if deadline and target else None
@@ -476,6 +481,11 @@ def withdraw(data_dir: Path, request_id: str,
     if not can_transition(src, RequestStatus.WITHDRAWN):
         return {"ok": False, "error": "invalid_transition",
                 "message": f"申请状态 {src.value} 不可撤回（仅 cooling 可）"}
+    # H2 修复：过期后状态机仍 cooling（终裁懒惰），须阻止撤回，改走 expire 终裁
+    expire_d = datetime.fromisoformat(entry["expire_at"]).date()
+    if today > expire_d:
+        return {"ok": False, "error": "already_expired",
+                "message": f"申请 {request_id} 已过期，请走终裁（judge --action expire）"}
     entry["status"] = RequestStatus.WITHDRAWN.value
     _update_pending_spend_status(contract, request_id, "withdrawn")  # M4 台账联动
     contract_io.write_contract(data_dir, contract, actor="engine")

@@ -1,5 +1,17 @@
 # CHANGELOG — self-trust
 
+## [0.7.8] - 2026-07-28
+
+### Fixed（第二轮硬伤扫描 H1–H7 严重项修复，来源 `Loomy/self-trust-硬伤扫描报告.md`）
+- **H1 申诉重审透传融资参数**：`governance.appeal` 重审不再退化为全款非融资判定，改从 entry 取出 `financed_amount/down_payment/mortgage_monthly` 透传给 `judge`，融资购房月供可覆盖性硬约束不再被跳过（修复前可能把本应驳回的融资审批改判通过）。
+- **H2 撤回过期校验**：`judge.withdraw` 在状态机转移前检查 `today > expire_at`，过期申请禁止撤回（须走 `expire` 终裁），消除「过期仍 cooling → 可撤回」的逻辑矛盾。
+- **H3 多目标权重归一化**：`judge._objective_impacts` 按 `share = amount × weight / total_weight` 分摊，修复前 `share = amount × weight` 未除总权重，多目标时各目标影响相加翻倍、lag 恶化判定过于激进。
+- **H4 冷却窗覆盖 ratio/fixed/模式切换**：`customize._is_weakening` 由仅查 `months` 下调，扩展为按「有效安全垫是否下降」判定（覆盖 `safety_cushion.ratio`/`fixed` 下调与 `months→fixed` 等模式切换），不再可被切模式+下调绕过冷却窗。
+- **H5 风险提示用修改后契约**：`customize.preview`/`apply` 的 `_risk_warnings` 改传 `_apply_changes` 后的 `new` 契约，数字反映终态（修复前用修改前 `contract` 算，联动改 `living_baseline`/`monthly_contribution` 时提示数字失真）。
+- **H6 拒绝同名重复追加**：`customize._apply_changes` 的 `add_objective`/`whitelist_add`/`add_liability`/`add_rigid` 增加同名查重，重复追加抛 `ValueError`（修复前静默 append 导致 `check_whitelist`/`_objective_impacts` 只取首条或重复计算）。
+- **H7 覆写闭环 request 状态**：`governance.override` 放行后把 entry 置 `DECIDED` + 记 `decision` + 同步审批台账，杜绝「同笔申请仍 cooling → 可继续 withdraw/finalize、申诉 3 次再 override」的无限放行环。
+- 新增测试文件 `scripts/tests/test_scan_hardening.py`，覆盖 H1–H7 回归（含对照：H1 不带融资参数→维持驳回、H2 过期→拒撤回、H4 上调/非护栏修改→不削弱）。测试 268 → 285。
+
 ## [0.7.7] - 2026-07-28
 
 ### Fixed（硬伤扫描 M1–M6 修复）

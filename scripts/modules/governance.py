@@ -22,6 +22,7 @@ from typing import Any, Optional
 from core import audit as audit_io
 from core import contract as contract_io
 from core import formulas as F
+from core.models import RequestStatus
 from modules import streaks
 
 APPEAL_OVERRIDE_THRESHOLD = 3   # §5.2 连续申诉驳回满 3 次开放人工覆写
@@ -70,7 +71,11 @@ def appeal(
 
     verdict = judge(contract, amount=float(entry["amount"]),
                     category=entry.get("category", ""),
-                    planned=bool(entry.get("planned")), today=today)
+                    planned=bool(entry.get("planned")), today=today,
+                    # H1 修复：重审须与原判定同口径——透传融资参数，否则融资购房
+                    # 的月供可覆盖性硬约束被跳过，可能把本应驳回的改判通过。
+                    financed_amount=float(entry.get("financed_amount", 0) or 0),
+                    financed_monthly=entry.get("mortgage_monthly"))
     if not verdict.get("ok"):
         return verdict
 
@@ -114,7 +119,7 @@ def override(
     必须 confirm=True（确认知悉目标延后时长）；消耗申诉计数归零；
     仅作用于当次支取，不改任何契约配置结构。
     """
-    from modules.judge import _objective_impacts  # 复用延后测算
+    from modules.judge import _objective_impacts, _update_pending_spend_status  # 复用测算 + 台账联动
 
     today = today or date.today()
     contract = contract_io.read_contract(data_dir)
@@ -157,7 +162,17 @@ def override(
                            "（confirm=True）",
                 "target_impact": target_impact}
 
+    # H7 修复：放行后须闭环 request 状态——置 DECIDED + 记 decision + 同步审批台账，
+    # 否则同笔申请仍处 cooling，可继续 withdraw/finalize，且申诉计数归零后再申诉 3 次
+    # 又能 override，形成无限放行环。
+    entry["status"] = RequestStatus.DECIDED.value
+    entry["decision"] = {
+        "scene": "A",
+        "result": "人工覆写放行",
+        "summary": "满 3 次申诉后人工覆写（§5.2）",
+    }
     contract["appeal_count"] = 0   # 消耗申诉计数（防兜底常态化）
+    _update_pending_spend_status(contract, request_id, "approved")  # M4 台账联动
     contract_io.write_contract(data_dir, contract, actor="engine")
     audit_io.append(data_dir, "override_log", {
         "time": _now(), "event": "manual_override",
@@ -167,8 +182,9 @@ def override(
         "confirm": "已确认知悉目标延后影响",
     })
     return {"ok": True, "request_id": request_id, "amount": amount,
+            "status": RequestStatus.DECIDED.value,
             "target_impact": target_impact, "appeal_count": 0,
-            "message": "人工覆写放行（仅当次支取）；申诉计数已消耗归零，"
+            "message": "人工覆写放行（仅当次支取）；申请已置 DECIDED，申诉计数已消耗归零，"
                        "需重新积累 3 次方可再次开启兜底通道"}
 
 

@@ -203,18 +203,42 @@ def _risk_warnings(contract: dict[str, Any], changed: dict[str, Any]) -> list[st
     return warns
 
 
-def _is_weakening(changed: dict[str, Any]) -> bool:
-    """§5.4 冷却窗：仅「削弱自身」的护栏修改需 1 个自然日冷静窗——
+def _eff_cushion(sc: dict[str, Any], lb: float, net: float) -> float:
+    """按安全垫配置算有效安全垫（与 F.f1_effective_cushion 同口径，避免新增依赖）。"""
+    mode = sc.get("mode", "months")
+    if mode == "months":
+        return float(lb) * float(sc.get("months", 6))
+    if mode == "fixed":
+        return float(sc.get("fixed", 0))
+    if mode == "ratio":
+        return max(float(net), 0.0) * float(sc.get("ratio", 0.2))
+    return 0.0
 
-    safety_cushion.months 下调 或 distribution_rules.invest_ratio 下调。
+
+def _is_weakening(changed: dict[str, Any],
+                  contract: dict[str, Any] | None = None) -> bool:
+    """§5.4 冷却窗：仅「削弱自身」的护栏修改需 1 个自然日冷静窗。
+
+    - safety_cushion.months 下调；
+    - safety_cushion.ratio / fixed 下调，或模式切换导致有效安全垫下降（H4 修复）；
+    - distribution_rules.invest_ratio 下调。
     其余护栏修改（上调安全垫 / 切 optimization_goal / 增删白名单 / 增删目标）
     不属「削弱自身」，立即生效、不进冷却窗。
     """
     if "safety_cushion" in changed:
-        om = changed["safety_cushion"]["from"].get("months")
-        nm = changed["safety_cushion"]["to"].get("months")
+        frm = changed["safety_cushion"]["from"]
+        to = changed["safety_cushion"]["to"]
+        # 简单口径（向后兼容）：月数下调
+        om, nm = frm.get("months"), to.get("months")
         if om is not None and nm is not None and nm < om:
             return True
+        # 通用口径（H4）：有效安全垫下降即削弱——覆盖 ratio/fixed 下调与模式切换
+        if contract is not None:
+            lb = living_baseline_value(contract)
+            net = float(contract.get("corpus", 0)) - sum(
+                float(x.get("balance", 0)) for x in contract.get("liabilities", []))
+            if _eff_cushion(to, lb, net) < _eff_cushion(frm, lb, net):
+                return True
     if "distribution_rules" in changed:
         od = changed["distribution_rules"]["from"].get("invest_ratio")
         nd = changed["distribution_rules"]["to"].get("invest_ratio")
@@ -234,10 +258,17 @@ def _apply_changes(contract: dict[str, Any], changes: dict[str, Any]):
 
     for spec in changes.get("add_objective", []):
         obj = _parse_objective(spec)
+        # H6 修复：拒绝同名重复追加，避免 _objective_impacts 重复计算 / 下游只取首条
+        if any(o.get("name") == obj.get("name") for o in new.get("objectives", [])):
+            raise ValueError(f"目标已存在: {obj.get('name')}（请用 set 修改）")
         new.setdefault("objectives", []).append(obj)
         touched.add("objectives")
 
     for w in changes.get("whitelist_add", []):
+        # H6 修复：拒绝同名白名单重复追加
+        if any(x.get("name") == w["name"]
+               for x in new.get("fast_track_whitelist", [])):
+            raise ValueError(f"极速审批类目已存在: {w['name']}（请用 set 修改）")
         new.setdefault("fast_track_whitelist", []).append({
             "name": w["name"], "per_tx_cap": w["per_tx_cap"],
             "annual_cap": w["annual_cap"], "used_annual": 0})
@@ -251,6 +282,9 @@ def _apply_changes(contract: dict[str, Any], changes: dict[str, Any]):
         touched.add("fast_track_whitelist")
 
     for lb in changes.get("add_liability", []):
+        # H6 修复：拒绝同名负债重复追加
+        if any(x.get("name") == lb.get("name") for x in new.get("liabilities", [])):
+            raise ValueError(f"负债已存在: {lb.get('name')}（请用 set 修改）")
         new.setdefault("liabilities", []).append(lb)
         touched.add("liabilities")
 
@@ -262,6 +296,10 @@ def _apply_changes(contract: dict[str, Any], changes: dict[str, Any]):
         touched.add("liabilities")
 
     for rg in changes.get("add_rigid", []):
+        # H6 修复：拒绝同名刚性支出重复追加
+        if any(x.get("name") == rg.get("name")
+               for x in new.get("rigid_annual_expenses", [])):
+            raise ValueError(f"刚性年支出已存在: {rg.get('name')}（请用 set 修改）")
         new.setdefault("rigid_annual_expenses", []).append(rg)
         touched.add("rigid_annual_expenses")
 
@@ -391,8 +429,8 @@ def preview(data_dir: Path, changes: dict[str, Any]) -> dict[str, Any]:
 
     changed = _diff(contract, new)
     touched_guard = sorted(t for t in changed if t in CORE_GUARD_FIELDS)
-    risks = _risk_warnings(contract, changed)
-    weakening = _is_weakening(changed)
+    risks = _risk_warnings(new, changed)          # H5 修复：风险提示用修改后契约
+    weakening = _is_weakening(changed, contract)  # H4 修复：传入契约算有效安全垫
     tok = _token(changes, _contract_sha(contract))
     return {
         "ok": True, "needs_confirm": True, "preview": True,
@@ -437,10 +475,10 @@ def apply(data_dir: Path, changes: dict[str, Any], *, confirm: bool,
     new, _ = _apply_changes(contract, changes)
     changed = _diff(contract, new)
     touched_guard = sorted(t for t in changed if t in CORE_GUARD_FIELDS)
-    risks = _risk_warnings(contract, changed)
+    risks = _risk_warnings(new, changed)          # H5 修复：风险提示用修改后契约
 
     # —— §5.4 冷却窗：削弱自身 → 进 pending，不落盘配置 ——
-    if _is_weakening(changed):
+    if _is_weakening(changed, contract):          # H4 修复：传入契约算有效安全垫
         now = datetime.now()
         entry = {
             "request_id": secrets.token_hex(6),

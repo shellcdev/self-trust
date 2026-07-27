@@ -38,3 +38,10 @@
 5. ~~SKILL.md / references 按实装后的 CLI 参数表同步措辞~~ ✅ 已完成（2026-07-27：SKILL.md 命令表全量重写 + approval/exceptions/report/data-modes/init/contract-schema 六份 references 对齐真实子命令与 --json 输出字段）
 6. ~~§5.4 冷却窗（削弱自身修改 1 日冷静窗 + 窗内撤回 + 懒惰过期自动生效）~~ ✅ 已完成（2026-07-27：`pending_config_changes` 运行时态队列 + withdraw_config/sweep_pending_config/review_config + cli `customize --withdraw/--review` + report 懒惰扫描；217 单测）
 7. ~~负债/房贷建模~~ ✅ 已完成（2026-07-28：judge 决策口径改净资产(net_assets)修复 §4.4 line360 口径 bug + 融资购房模式(financed_amount 首付+月供可行性) + customize 负债/刚性支出增删 + 记录购房落账；227 单测）
+
+## 已知硬伤扫描
+
+- **第一轮扫描（2026-07-28）**：H1–H3 + M1–M6 全部闭环 ✅（见 CHANGELOG [0.7.6]–[0.7.7]）。
+- **第二轮扫描 `Loomy/self-trust-硬伤扫描报告.md`（2026-07-28，27 项 H1–H7 / M1–M9 / L1–L11）**：
+  - ✅ **严重 H1–H7 全部修复**（appeal 透传融资参数 / withdraw 过期校验 / 权重归一化 / 冷却窗覆盖 ratio-fixed-模式 / 风险提示用新契约 / 拒绝同名重复追加 / override 闭环 request 状态），回归测试见 `scripts/tests/test_scan_hardening.py`（CHANGELOG [0.7.8]，285 测试全绿）。
+  - ⏳ **中等 M1–M9 / 轻微 L1–L11 待办**：多为防御性/最佳实践（审计时间一致性、并发文件锁、token 恒定时间比较、输入校验、类型严谨等），尚未逐个核实与修复，留作后续批次。

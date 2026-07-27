@@ -36,9 +36,13 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 | 目标完结/归档 | 用户显式迁移：`python scripts/cli.py objective --name FIRE --to completed\|archived --confirm` | references/report.md |
 | 记账对账 | hybrid 用户拍板修正：`python scripts/cli.py reconcile [--corpus 元] [--income 元] [--invest 元] [--living 元] [--impulse 元]` | references/data-modes.md |
 | 记账重置 | 二次确认整文件重建（audit 保留）：`python scripts/cli.py reset --confirm --corpus 元 --monthly 元 --objective "名:目标额:期限" [--reason "..."]` | references/exceptions.md |
+| 记账自定义 | 增量覆盖契约配置区参数（§5.4 二次确认）：`python scripts/cli.py customize --set distribution_rules.invest_ratio=0.3`（预览返回 token）→ 同一变更加 `--confirm --token <token>` 落盘；支持 `--set`（嵌套 DOTPATH，含 `safety_cushion.months` / `optimization_goal` / `mode`）/ `--add-objective "名:额:期限"` / `--whitelist-add 名称 --per-tx-cap 元 --annual-cap 元` / `--whitelist-remove 名称` | references/exceptions.md |
+| 记账模式 | 切换全局优化调度（记账自定义子集）：`python scripts/cli.py customize --set optimization_goal wealth\|balanced\|objective`（核心护栏字段，触发 §5.4 风险提示） | references/exceptions.md |
+| 记账切模式 | 切换数据存储模式：`python scripts/cli.py customize --set mode ledger\|conversational\|hybrid`（非核心，普通确认） | references/data-modes.md |
 | 记账日志 [类型] | 审计只读查询：`python scripts/cli.py log --name approval_log\|appeal_log\|override_log\|reward_log\|monthly_history` | references/report.md |
 | 记账演示 | 三场景真实干跑（不落盘不影响真实账户）：`python scripts/cli.py demo`（init 回执也自动附 demo 区块） | references/init.md |
-| 记账切模式 / 记账自定义 / 记账白名单 / 第三方导入 | 待实施（见 STATUS.md）；§3.1 平滑过渡提示已实装（report/judge 输出 `mode_transition_hint`，仅建议不自动改 mode） | 对应 references |
+| 记账白名单 加/删 | 极速审批应急类目管理（记账自定义子集）：`python scripts/cli.py customize --whitelist-add 名称 --per-tx-cap 元 --annual-cap 元` / `--whitelist-remove 名称`（核心护栏字段，触发 §5.4 风险提示） | references/exceptions.md |
+| 第三方导入 | 待实施（见 STATUS.md）；`imported_pending` 审批拦截已实装 | 对应 references |
 
 **全局参数**（所有子命令通用，只说明这一次）：
 - `--data-dir <path>`：数据目录（优先级：命令行 > `SELFTRUST_DATA_DIR` > 默认 `<home>/.claw/self-trust/`）；
@@ -64,4 +68,4 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 
 ## 状态
 
-核心闭环（初始化→审批→冷静期→报表→校准→奖励→申诉/覆写→重置→对账）+ §7.2 演示干跑 + §3.1 平滑过渡计数器已实装并通过测试（191 单测 + 12 端到端）。剩余待实施：模式切换/自定义/第三方导入。实现进度见 STATUS.md（真相源）。
+核心闭环（初始化→审批→冷静期→报表→校准→奖励→申诉/覆写→重置→对账）+ §7.2 演示干跑 + §3.1 平滑过渡计数器 + 记账自定义（§5.4 闸门入口，含模式切换/白名单增删）已实装并通过测试（207 单测 + 12 端到端）。剩余待实施：第三方导入。实现进度见 STATUS.md（真相源）。

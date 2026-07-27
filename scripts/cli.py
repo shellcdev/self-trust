@@ -28,6 +28,7 @@ from core import audit as audit_io           # noqa: E402
 from core import contract as contract_io     # noqa: E402
 from core.contract import GuardError         # noqa: E402
 from modules import calibrate as mod_cal     # noqa: E402
+from modules import customize as mod_customize  # noqa: E402
 from modules import governance as mod_gov    # noqa: E402
 from modules import initialize as mod_init   # noqa: E402
 from modules import judge as mod_judge       # noqa: E402
@@ -184,6 +185,18 @@ def cmd_log(args) -> int:
                   "count": len(records), "records": records})
 
 
+def cmd_customize(args) -> int:
+    data_dir = contract_io.resolve_data_dir(args.data_dir)
+    try:
+        changes = mod_customize.build_changes(args)
+    except ValueError as e:
+        return _emit({"ok": False, "error": "invalid", "message": str(e)}, 4)
+    result = mod_customize.apply(
+        data_dir, changes, confirm=args.confirm, token=args.token,
+        reason=args.reason or "")
+    return _emit(result, 0 if result.get("ok") else 1)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="self-trust",
@@ -268,6 +281,24 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--name", default="approval_log",
                     choices=sorted(audit_io.VALID_LOGS))
     sp.set_defaults(func=cmd_log)
+
+    sp = sub.add_parser("customize", help="记账自定义：增量覆盖契约配置区参数（§5.4 二次确认）")
+    sp.add_argument("--set", action="append", default=None,
+                    help="设置嵌套字段 DOTPATH=VALUE（如 distribution_rules.invest_ratio=0.3、"
+                         "safety_cushion.months=4、optimization_goal=wealth、mode=ledger），可重复")
+    sp.add_argument("--add-objective", action="append", default=None,
+                    help='新增目标 "名称:目标额:期限"（如 买房:1000000:2030-01-01），可重复')
+    sp.add_argument("--whitelist-add", default=None, help="新增极速审批类目 名称")
+    sp.add_argument("--per-tx-cap", type=float, default=None,
+                    help="白名单单笔上限（须与 --whitelist-add 同传）")
+    sp.add_argument("--annual-cap", type=float, default=None,
+                    help="白名单年上限（须与 --whitelist-add 同传）")
+    sp.add_argument("--whitelist-remove", default=None, help="移除极速审批类目 名称")
+    sp.add_argument("--confirm", action="store_true",
+                    help="二次确认（须同时带预览返回的 --token 才落盘）")
+    sp.add_argument("--token", default=None, help="预览返回的确认 token（防漂移）")
+    sp.add_argument("--reason", default=None, help="自定义原因（写入 override_log）")
+    sp.set_defaults(func=cmd_customize)
 
     return p
 

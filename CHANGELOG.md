@@ -1,5 +1,13 @@
 # CHANGELOG — self-trust
 
+## [0.4.0] - 2026-07-27
+
+### Added
+- 记账自定义（`modules/customize.py` + `cli.py customize` 子命令，§5.4 / §7.1 / §9）：增量覆盖契约配置区参数，不破坏未填值。`--set DOTPATH=VALUE`（支持嵌套如 `distribution_rules.invest_ratio` / `safety_cushion.months` / `optimization_goal` / `mode`）、`--add-objective "名:额:期限"`、`--whitelist-add 名称 --per-tx-cap 元 --annual-cap 元`、`--whitelist-remove 名称`。
+- §5.4 二次确认闸门入口闭环：预览（confirm=False）返回 `needs_confirm` + 确认 `token` + 核心护栏字段的**具体数字风险提示**（安全垫月数↓/invest_ratio 归零或变动按当前生活费基线与月净流入算出现金缓冲与每月增值投入变化、optimization_goal 三档语义、目标增删、白名单增删）；确认须带预览 `token`（防漂移/手滑，单次确认不生效），契约变更后旧 token 失效（stale_token）；落盘经 `write_contract(actor="configurator", confirm=True)`，未知字段/审计字段由底层 GuardError 拦截；变更追加 `override_log`（§5.4 步骤4，§10.1 仅追加）。
+- 同步收口 §9 三项待实施：`记账模式`（optimization_goal 切换，核心护栏字段→风险提示）、`记账切模式`（mode 切换，非核心→普通确认）、`记账白名单 加/删`（fast_track_whitelist 结构改动，核心护栏字段→风险提示）。
+- 测试 191 → 207：新增 test_customize（预览不落盘+token+风险提示 / 无·错 token 拒绝 / 带 token 落盘+override_log / token 契约变更失效 / 白名单增删 / 目标新增 / 未知·审计字段 GuardError / build_changes 校验）。
+
 ## [0.3.0] - 2026-07-27
 
 ### Added

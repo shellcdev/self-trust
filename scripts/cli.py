@@ -3,7 +3,7 @@
 
 子命令：judge | init | report | reconcile | calibrate | reward | reset | appeal | log
 - 全部输出结构化 JSON（stdout，UTF-8）；LLM 铁律：禁止心算，数字原样引用本输出。
-- 数据目录解析优先级：--data-dir > SELFTRUST_DATA_DIR > <cwd>/memory/trust/（README）。
+- 数据目录解析优先级：--data-dir > SELFTRUST_DATA_DIR > <home>/.claw/self-trust/（README）。
 - 引擎错误显式返回 {"ok": false, "error": ...}，退出码非 0，不吞错。
 
 示例：
@@ -180,7 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="self-trust",
         description="self-trust 自律记账引擎（确定性判定，LLM 只渲染不心算）")
     p.add_argument("--data-dir", default=None,
-                   help="数据目录（优先级：本参数 > SELFTRUST_DATA_DIR > <cwd>/memory/trust/）")
+                   help="数据目录（优先级：本参数 > SELFTRUST_DATA_DIR > <home>/.claw/self-trust/）")
     p.add_argument("--json", action="store_true", default=True,
                    help="结构化 JSON 输出（默认且唯一格式）")
     p.add_argument("--today", default=None,

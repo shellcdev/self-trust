@@ -182,6 +182,32 @@ class TestMiscGuards:
                            actor="configurator")
 
 
+class TestDataDirResolution:
+    """数据目录三级解析：命令行 > env > 默认 <home>/.claw/self-trust/（零 cwd 依赖）。"""
+
+    def test_cli_arg_wins(self, tmp_path, monkeypatch):
+        from pathlib import Path
+        from core.contract import resolve_data_dir
+        monkeypatch.setenv("SELFTRUST_DATA_DIR", str(tmp_path / "env"))
+        assert resolve_data_dir(str(tmp_path / "cli")) == Path(tmp_path / "cli")
+
+    def test_env_overrides_default(self, tmp_path, monkeypatch):
+        from pathlib import Path
+        from core.contract import resolve_data_dir
+        monkeypatch.setenv("SELFTRUST_DATA_DIR", str(tmp_path / "env"))
+        assert resolve_data_dir(None) == Path(tmp_path / "env")
+
+    def test_default_anchored_to_home_not_cwd(self, tmp_path, monkeypatch):
+        """默认落点锚定 Path.home()/.claw/self-trust（规范 §3 平台基址），不随 cwd 飘。"""
+        from pathlib import Path
+        from core.contract import resolve_data_dir
+        monkeypatch.delenv("SELFTRUST_DATA_DIR", raising=False)
+        monkeypatch.chdir(tmp_path)   # 换 cwd 不影响默认解析
+        resolved = resolve_data_dir(None)
+        assert resolved == Path.home() / ".claw" / "self-trust"
+        assert not str(resolved).startswith(str(tmp_path))
+
+
 class TestInitGuards:
     """§7.1 护栏 1：重复初始化拒绝覆盖。"""
 

@@ -31,7 +31,7 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 | 记账日志 [类型] | `python scripts/cli.py log --name <approval_log\|appeal_log\|override_log\|reward_log\|monthly_history>` | references/report.md |
 | 记账切模式 / 记账自定义 / 记账白名单 / 记账演示 / 记账重置 | 待实施（见 STATUS.md） | 对应 references |
 
-所有命令可加 `--data-dir <path>`（优先级：命令行 > `SELFTRUST_DATA_DIR` > `<workspace>/memory/trust/`）。
+所有命令可加 `--data-dir <path>`（优先级：命令行 > `SELFTRUST_DATA_DIR` > 默认 `<home>/.claw/self-trust/`）。
 
 ## references 加载路由（按需读，别全读）
 

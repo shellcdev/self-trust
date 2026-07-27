@@ -10,7 +10,7 @@
 |---|---|---|
 | `core/formulas.py` F0~F8 | ✅ | 纯函数 + doctest（文档示例数字），除零/null/超期 clamp 守卫齐 |
 | `core/models.py` schema/三区/状态机 | ✅ | dataclass 契约 + FIELD_ZONES + pending_requests 状态机守卫 |
-| `core/contract.py` 读写+权限强制 | ✅ | data-dir 三级解析；engine 写配置区必拒；§5.4 闸门；新增运行态子字段白名单（lag_streak/reward_*/used_annual/status active→overdue 引擎可写，其余结构仍只读） |
+| `core/contract.py` 读写+权限强制 | ✅ | data-dir 三级解析（默认 ✅ 锚定 home/.claw/self-trust：`Path.home()` 规范 §3 平台基址，零 cwd 依赖）；engine 写配置区必拒；§5.4 闸门；新增运行态子字段白名单（lag_streak/reward_*/used_annual/status active→overdue 引擎可写，其余结构仍只读） |
 | `core/audit.py` 仅追加 | ✅ | audit/*.jsonl 仅追加，无删除接口，损坏显式报错 |
 | `modules/initialize.py` 懒人模板 | ✅ | §7.1 护栏 1/2/3/4 全实现；演示（§7.2）仍为 stub（低优先） |
 | `modules/judge.py` | ✅ | §4.4 三场景 + lag 恶化（F4+F7 impacted/降级/严重拖慢）+ 白名单双上限与跨年重置 + optimization_goal 三档乘数 + imported_pending 拦截 + submit/withdraw/finalize/expire 冷静期生命周期 + list_due_reminders 双阶段提醒数据 + F8 快照 |

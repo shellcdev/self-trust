@@ -15,7 +15,7 @@
     └── monthly_history.jsonl  # 月度快照（§6.1 趋势图数据源）
 ```
 
-data-dir 解析：`--data-dir` > `SELFTRUST_DATA_DIR` > `<workspace>/memory/trust/`。
+data-dir 解析：`--data-dir` > `SELFTRUST_DATA_DIR` > 默认 `<home>/.claw/self-trust/`（规范 §3 平台基址，Path.home() 锚定；零 cwd 依赖，在 skill 目录外、`.claw` 备份树内）。
 
 ## 2. 三区权限表（§10.3，`models.FIELD_ZONES` 强制）
 

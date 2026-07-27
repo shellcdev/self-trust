@@ -15,7 +15,7 @@
 
 1. 命令行参数 `--data-dir <path>`
 2. 环境变量 `SELFTRUST_DATA_DIR`
-3. 默认 `<workspace>/memory/trust/`（`<workspace>` = 进程当前工作目录）
+3. 默认 `<home>/.claw/self-trust/`（规范 §3 平台基址，`Path.home()` 解析；零 cwd 依赖、零硬编码机器绝对路径；数据在 skill 目录外，删 skill 不毁账本，且在 `.claw` 备份树内）
 
 数据布局：`<data-dir>/contract.json`（契约）+ `<data-dir>/audit/*.jsonl`（审计，仅追加，物理分离）。
 

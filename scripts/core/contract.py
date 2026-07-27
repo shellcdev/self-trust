@@ -2,9 +2,10 @@
 """契约读写 + 数据目录解析 + 三区权限强制（设计文档 §2 / §8.3 #6 / §10.3 / §5.4）。
 
 数据目录解析优先级（写进 README，规范 #6）：
-    命令行 --data-dir  >  环境变量 SELFTRUST_DATA_DIR  >  默认 <workspace>/memory/trust/
-默认 <workspace> 取当前工作目录（skill 运行时由调用方保证 cwd 或显式传参），
-代码零个人绝对路径硬编码（假设开源）。
+    命令行 --data-dir  >  环境变量 SELFTRUST_DATA_DIR  >  默认 <home>/.claw/self-trust
+默认落点锚定规范 §3 平台基址（Path.home()），不依赖运行时 cwd——契约+审计是
+财务账本（§10.1），必须在 skill 目录外（删 skill 不毁账本）、在 .claw 备份树内
+（MA-2 覆盖）；代码零个人绝对路径硬编码（假设开源，跨机可重放）。
 
 三区权限强制（公正性地基，test_contract_guard 最高优先）：
 - actor="engine"：只允许改运行态区字段；触碰配置区 → PermissionError（显式报错不吞）。
@@ -22,7 +23,6 @@ from typing import Any, Optional
 from .models import Contract, FIELD_ZONES, CORE_GUARD_FIELDS, Zone
 
 ENV_DATA_DIR = "SELFTRUST_DATA_DIR"
-DEFAULT_SUBPATH = Path("memory") / "trust"
 CONTRACT_FILENAME = "contract.json"
 
 
@@ -65,13 +65,13 @@ def _engine_list_change_ok(key: str, old_list: Any, new_list: Any) -> bool:
 
 
 def resolve_data_dir(cli_data_dir: Optional[str] = None) -> Path:
-    """解析数据目录：命令行 > env > 默认 <cwd>/memory/trust/。"""
+    """解析数据目录：命令行 > env > 默认 <home>/.claw/self-trust（规范 §3 平台基址）。"""
     if cli_data_dir:
         return Path(cli_data_dir).expanduser()
     env = os.environ.get(ENV_DATA_DIR)
     if env:
         return Path(env).expanduser()
-    return Path.cwd() / DEFAULT_SUBPATH
+    return Path.home() / ".claw" / "self-trust"
 
 
 def contract_path(data_dir: Path) -> Path:

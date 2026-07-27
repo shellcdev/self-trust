@@ -104,6 +104,18 @@ def test_sweep_applies_after_expiry(tmp_data_dir, base_contract):
     assert any(l.get("event") == "contract_customize_cooled" for l in logs)
 
 
+def test_sweep_removes_applied_from_queue(tmp_data_dir, base_contract):
+    # M5：到期自动生效的条目应从 pending_config_changes 移除（历史沉淀在 override_log），
+    # 避免队列无限堆积脏数据。
+    ch = _set("safety_cushion.months", 3)
+    tok = cz.preview(tmp_data_dir, ch)["token"]
+    cz.apply(tmp_data_dir, ch, confirm=True, token=tok, reason="")
+    future = datetime.now() + timedelta(days=2)
+    cz.sweep_pending_config(tmp_data_dir, now=future)
+    c = contract_io.read_contract(tmp_data_dir)
+    assert not c.get("pending_config_changes"), "已生效条目应已清空"
+
+
 def test_withdraw_after_expiry_rejected(tmp_data_dir, base_contract):
     ch = _set("safety_cushion.months", 3)
     tok = cz.preview(tmp_data_dir, ch)["token"]

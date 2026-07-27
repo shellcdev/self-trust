@@ -2,7 +2,7 @@
 
 > 真相源在本文件（仓内 dev doc），不在记忆。状态标记：✅ 已实现 / ⚠️ 部分（骨架可跑，业务未完） / 待实施 / ❌ 已废弃。
 
-更新：2026-07-28（**硬伤修复 H1–H3**：①H1 `import_asset.compute_candidates` 按 `(name,kind)` 去重合并——完全重复行静默丢弃、同名异额行求和告警，根治 CSV/手动导入重复列账户导致资产/负债双倍计入；②H2 `record_home-purchase` 已存在「房贷」则更新非追加，根治负债/月供翻倍；③H3 `judge.submit` 融资购房白名单年度额度改按首付(`actual_cash_out`)而非全款累加，与限额闸门口径一致。测试 247 → 255（H1×4/H2×3/H3×1）。见 CHANGELOG `[0.7.6]`）
+更新：2026-07-28（**硬伤修复 M1–M6**（续 H1–H3）：①M1 `parse_money`+容差比较杜绝浮点亚分漂移；②M2 CSV 金额币种/千分位+流水多日期格式容错；③M3 导入解析 `due_month` 透传 rigid 到期月；④M4 `judge.submit` 记运行时 `pending_spends` 台账、`governance.reconcile` 对账并入并清空（消「审批不自动扣 corpus」静默坑——corpus 是配置区、引擎无权改，故用台账而非硬扣）；⑤M5 `sweep_pending_config` 生效后清除 `pending_config_changes` 脏数据；⑥M6 `confirm_import` 列表型修正按名合并防丢数据。测试 255 → 268（M1×3/M2×3/M3×1/M4×4/M5×1/M6×1）。见 CHANGELOG `[0.7.7]`）
 
 ## 当前阶段：核心闭环（初始化→审批→冷静期→报表→校准→奖励→治理）已通
 

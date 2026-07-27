@@ -261,6 +261,16 @@ def reconcile(
     observed_gap = ((today - date.fromisoformat(str(last)[:10])).days
                     if last else 0)
     streaks.record_report(contract, today)
+    # M4：对账重新锚定 corpus；把积压的支出台账并入本次对账并清空，消除「审批不自动
+    # 扣 corpus」的静默坑——用户在下文提供的新 corpus 即真实基数，台账仅作提示与销账。
+    pending = contract.get("pending_spends") or []
+    cleared = {"count": 0, "total_actual_cash_out": 0.0}
+    if pending:
+        total = sum(float(s.get("actual_cash_out", 0)) for s in pending
+                    if s.get("status") != "withdrawn")
+        cleared = {"count": len(pending),
+                   "total_actual_cash_out": round(total, 2)}
+        contract["pending_spends"] = []  # 并入后清空（历史沉淀在 approval_log）
     # corpus 属配置区 → 用户拍板对账即配置者动作（引擎不自动改写，§3.2 护栏）
     contract_io.write_contract(data_dir, contract, actor="configurator")
 
@@ -281,8 +291,12 @@ def reconcile(
 
     return {"ok": True, "changes": changes,
             "last_reconcile": today.isoformat(),
+            "pending_spends_cleared": cleared,  # M4：本次对账并入并清空的支出台账
             "snapshot_appended": snapshot,
             "report_streak": contract["report_streak"],
             "mode_transition_hint": streaks.transition_hint(
                 contract, observed_gap=observed_gap),
-            "note": "对账为用户拍板确认；差额不进入审批判定历史（§3.2）"}
+            "note": ("对账为用户拍板确认；差额不进入审批判定历史（§3.2）。"
+                     + (f"已并入 {cleared['count']} 笔待对账支出、合计实际现金流出 "
+                        f"{cleared['total_actual_cash_out']:.2f}（台账已清空）。"
+                        if cleared["count"] else ""))}

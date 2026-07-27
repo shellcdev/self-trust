@@ -45,6 +45,7 @@ FIELD_ZONES: dict[str, Zone] = {
     "pending_requests": Zone.RUNTIME,
     "pending_config_changes": Zone.RUNTIME,   # §5.4 冷却窗：削弱自身修改的待生效队列
     "pending_import": Zone.RUNTIME,           # §7.3 第三方导入候选暂存（核对确认才落 live corpus）
+    "pending_spends": Zone.RUNTIME,           # M4：审批通过的支出台账（运行时态，reconcile 并入后清空）
     "rebalance_override": Zone.RUNTIME,
     "last_calibrate": Zone.RUNTIME,
     "last_report_date": Zone.RUNTIME,

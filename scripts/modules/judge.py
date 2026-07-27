@@ -319,6 +319,33 @@ def _find_request(contract: dict[str, Any], request_id: str) -> dict[str, Any] |
     return None
 
 
+def _record_pending_spend(contract: dict[str, Any], request_id: str,
+                          result: dict[str, Any], amount: float, category: str,
+                          planned: bool, financed_amount: float, status: str) -> None:
+    """M4：把审批通过的支出记入运行时台账 pending_spends（引擎可写，不碰配置区 corpus）。
+    仅记录实际现金流出，供 reconcile 对账时并入并清空，消除「审批不自动扣 corpus」的静默坑。"""
+    contract.setdefault("pending_spends", []).append({
+        "request_id": request_id,
+        "time": datetime.now().isoformat(timespec="seconds"),
+        "amount": float(amount),
+        "actual_cash_out": float(result["inputs"].get("actual_cash_out", amount)),
+        "category": category,
+        "planned": planned,
+        "scene": result["decision"]["scene"],
+        "financed_amount": float(financed_amount or 0),
+        "status": status,
+    })
+
+
+def _update_pending_spend_status(contract: dict[str, Any], request_id: str,
+                                 status: str) -> None:
+    """M4：冷却窗终裁/撤回时同步台账条目状态。"""
+    for s in contract.get("pending_spends", []):
+        if s.get("request_id") == request_id:
+            s["status"] = status
+            return
+
+
 def _reset_whitelist_year_if_needed(contract: dict[str, Any], today: date) -> bool:
     """§5.1.2 跨年重置：自然年变化 → 全部 used_annual 归零 + 更新 whitelist_cap_year。"""
     if contract.get("whitelist_cap_year") == today.year:
@@ -356,17 +383,33 @@ def submit(
     if not result.get("ok"):
         return result
 
+    scene = result["decision"]["scene"]
+    cooldown_triggered = result["cooldown"]["triggered"]
+    fast_track = bool(result["whitelist"].get("fast_track"))
+    # M4：场景 A/B（批准/附条件）或进入冷静期队列（待终裁）→ 视为「将发生的支出」，
+    # 记入运行时台账；场景 C 硬驳回（非冷静期、非白名单）→ 无支出，不记。
+    will_spend = scene in ("A", "B") or cooldown_triggered
+
     changed = _reset_whitelist_year_if_needed(contract, today)
     # §3.1 观察事件：审批不算上报，仅惰性刷新 gap_streak / 断档归零 report_streak
     changed = streaks.observe(contract, today) or changed
     request_id: Optional[str] = None
 
-    if result["cooldown"]["triggered"]:
+    if will_spend:
+        # M4：登记支出台账（运行时态，不碰配置区 corpus；§10.3 最小权限）。
+        # 冷静期入队者状态 cooling，其余（即时批准/白名单放行）状态 approved。
+        request_id = uuid.uuid4().hex[:12]
+        _record_pending_spend(
+            contract, request_id, result, amount, category, planned,
+            financed_amount, status="cooling" if cooldown_triggered else "approved")
+        changed = True
+
+    if cooldown_triggered:
         # §5.1 大额非白名单 → 入冷静期队列（跨会话持久不丢单）
         days = int(contract.get("cooldown_days", 3))
         now = datetime.combine(today, datetime.min.time())
         req = PendingRequest(
-            request_id=uuid.uuid4().hex[:12],
+            request_id=request_id,  # 与台账条目共用 id，便于终裁/撤回联动
             time=now.isoformat(timespec="seconds"),
             amount=float(amount),
             category=category,
@@ -380,12 +423,10 @@ def submit(
             "mortgage_monthly": result["inputs"].get("mortgage_monthly", 0.0),
         }
         contract.setdefault("pending_requests", []).append(entry)
-        request_id = req.request_id
         result["request_id"] = request_id
         result["expire_at"] = req.expire_at
         changed = True
-    elif (result["whitelist"].get("fast_track")
-          and result["decision"]["scene"] in ("A", "B")):
+    elif fast_track and scene in ("A", "B"):
         # §5.1.2 极速放行 → 年度额度记账
         # 修复 H3：与白名单限额闸门口径一致，记「实际现金流出」而非全款。
         #   非融资：actual_cash_out == amount（无变化）；融资购房：actual_cash_out == 首付，
@@ -436,6 +477,7 @@ def withdraw(data_dir: Path, request_id: str,
         return {"ok": False, "error": "invalid_transition",
                 "message": f"申请状态 {src.value} 不可撤回（仅 cooling 可）"}
     entry["status"] = RequestStatus.WITHDRAWN.value
+    _update_pending_spend_status(contract, request_id, "withdrawn")  # M4 台账联动
     contract_io.write_contract(data_dir, contract, actor="engine")
 
     # 正向激励要素（引擎只算，LLM 负责说人话）
@@ -504,6 +546,7 @@ def finalize(data_dir: Path, request_id: str,
         return {"ok": False, "error": "invalid_transition",
                 "message": f"申请状态 {src.value} 不可终裁（仅 cooling 可）"}
     entry["status"] = RequestStatus.DECIDED.value
+    _update_pending_spend_status(contract, request_id, "approved")  # M4 台账联动
     contract_io.write_contract(data_dir, contract, actor="engine")
     decision = entry.get("decision", {})
     audit_io.append(data_dir, "approval_log", {
@@ -546,6 +589,9 @@ def expire(data_dir: Path, request_id: str | None = None,
             return {"ok": False, "error": "invalid_transition",
                     "message": f"{entry['status']} -> {dst.value} 非法"}
         entry["status"] = dst.value
+        _update_pending_spend_status(
+            contract, entry["request_id"],
+            "approved" if dst == RequestStatus.DECIDED else "expired")  # M4 台账联动
         processed.append({"request_id": entry["request_id"],
                           "final_status": dst.value,
                           "decision": entry.get("decision")})

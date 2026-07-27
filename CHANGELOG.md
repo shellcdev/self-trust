@@ -1,5 +1,16 @@
 # CHANGELOG — self-trust
 
+## [0.7.7] - 2026-07-28
+
+### Fixed（硬伤扫描 M1–M6 修复）
+- **M1 金额精度**：新增 `parse_money`（落到分、round 2 位）+ `_dedup_balances` 改用**容差比较**（≤0.005），避免浮点亚分差异误判为非重复行；导入金额全程按分落地，杜绝亚分漂移累积。
+- **M2 CSV 解析容错**：余额/月供/流水金额接受币种符号（¥ $ ￥）与千分位逗号；流水日期接受 `年-月-日 / 年/月/日 / 年.月.日 / 年-月`（统一归一为 `-`、仅认「年在前」避免美式歧义），非法格式显式报错。
+- **M3 rigid 到期月**：CSV 导入解析可选 `due_month`/`due`/`month` 列（1–12）并透传，不再恒为 `None`。
+- **M4 审批支出台账**：`judge.submit` 把审批通过的支出记入运行时 `pending_spends`（引擎可写、不碰配置区 `corpus`——§10.3 最小权限硬约束，故不能自动扣 corpus）；`governance.reconcile` 对账时**并入并清空**台账（返回 `pending_spends_cleared` 笔数/合计），消除「审批通过不自动扣 corpus」的静默坑；withdraw/finalize/expire 同步台账状态。
+- **M5 冷却窗清理**：`customize.sweep_pending_config` 到期自动生效后**从 `pending_config_changes` 移除**已生效条目（历史沉淀在 override_log），不再无限堆积脏数据。
+- **M6 部分负债修正合并**：`confirm_import` 对 `liabilities`/`rigid_annual_expenses` 的修正**按 name 合并**（覆盖同名 + 保留未提及项），不再整表覆盖暂存清单造成数据丢失。
+- 测试 255 → 268（M1×3 / M2×3 / M3×1 / M4×4 / M5×1 / M6×1），全绿。
+
 ## [0.7.6] - 2026-07-28
 
 ### Fixed（硬伤扫描 H1–H3 修复）

@@ -47,8 +47,41 @@ def _contract_sha(contract: dict[str, Any]) -> str:
         json.dumps(contract, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
+def parse_money(raw: Any) -> float:
+    """解析金额（M1/M2）：容忍币种符号（¥ $ ￥）、千分位逗号、首尾空白；
+    落到「分」并 round 2 位，避免浮点亚分漂移；非法 → ValueError。"""
+    if raw is None:
+        return 0.0
+    s = str(raw).strip()
+    if not s:
+        return 0.0
+    s = (s.replace("¥", "").replace("￥", "").replace("$", "")
+          .replace(",", "").replace(" ", "").strip())
+    try:
+        return round(float(s), 2)
+    except ValueError:
+        raise ValueError(f"金额无法解析: {raw!r}")
+
+
+def normalize_flow_date(ds: str) -> str:
+    """流水日期归一化（M2）：接受 年-月-日 / 年/月/日 / 年.月.日 / 年-月（年首格式），
+    分隔符统一为「-」；仅接受「4 位年在前」以避免美式 MM/DD/YYYY 歧义；非法 → ValueError。"""
+    s = str(ds).strip()
+    if not s:
+        raise ValueError("flows CSV date 为空")
+    norm = s.replace("/", "-").replace(".", "-")
+    parts = [p for p in norm.split("-") if p != ""]
+    if parts and len(parts[0]) == 4 and all(p.isdigit() for p in parts[:3]):
+        return norm  # YYYY-MM-DD / YYYY-MM
+    raise ValueError(f"flows CSV date 须为「年-月-日」（年在前），得到 {ds!r}")
+
+
 def parse_balances_csv(path: Any) -> list[dict[str, Any]]:
-    """解析余额 CSV（name,balance,kind[,monthly]）→ 规范行列表。"""
+    """解析余额 CSV（name,balance,kind[,monthly[,due_month]]）→ 规范行列表。
+
+    - balance / monthly 走 parse_money（容忍 ¥ $ 千分位逗号，M2）；
+    - due_month 仅 rigid 有意义（1–12 月，M3），缺省/非法 → None。
+    """
     p = Path(path)
     rows: list[dict[str, Any]] = []
     with open(p, "r", encoding="utf-8-sig", newline="") as f:
@@ -61,21 +94,30 @@ def parse_balances_csv(path: Any) -> list[dict[str, Any]]:
             if kind not in ("asset", "liability", "rigid"):
                 raise ValueError(
                     f"balances CSV 第 {i} 行 kind 须为 asset/liability/rigid，得到 {kind!r}")
-            try:
-                balance = float(row.get("balance") or 0)
-            except ValueError:
-                raise ValueError(f"balances CSV 第 {i} 行 balance 非数字: {row.get('balance')!r}")
-            monthly = (row.get("monthly") or "").strip()
-            monthly_val = float(monthly) if monthly else 0.0
-            rows.append({"name": name, "balance": balance,
-                         "kind": kind, "monthly": monthly_val})
+            balance = parse_money(row.get("balance"))
+            monthly_raw = (row.get("monthly") or "").strip()
+            monthly_val = parse_money(monthly_raw) if monthly_raw else 0.0
+            due_raw = (row.get("due_month") or row.get("due") or row.get("month") or "").strip()
+            due_month = None
+            if due_raw:
+                try:
+                    dm = int(float(due_raw))
+                    if 1 <= dm <= 12:
+                        due_month = dm
+                except (ValueError, TypeError):
+                    due_month = None  # 非 1–12 整数 → 视为无到期月（不报错，交由人工核对）
+            rows.append({"name": name, "balance": balance, "kind": kind,
+                         "monthly": monthly_val, "due_month": due_month})
     if not rows:
         raise ValueError("balances CSV 为空（至少需要一行资产）")
     return rows
 
 
 def parse_flows_csv(path: Any) -> list[tuple[str, float]]:
-    """解析流水 CSV（date,amount）→ [(date_str, amount), ...]。"""
+    """解析流水 CSV（date,amount）→ [(date_str, amount), ...]。
+
+    amount 走 parse_money（M2）；date 走 normalize_flow_date（M2 多格式容错）。
+    """
     p = Path(path)
     out: list[tuple[str, float]] = []
     with open(p, "r", encoding="utf-8-sig", newline="") as f:
@@ -85,12 +127,24 @@ def parse_flows_csv(path: Any) -> list[tuple[str, float]]:
             am = (row.get("amount") or "").strip()
             if not ds or not am:
                 raise ValueError(f"flows CSV 第 {i} 行缺少 date 或 amount")
-            try:
-                amount = float(am)
-            except ValueError:
-                raise ValueError(f"flows CSV 第 {i} 行 amount 非数字: {am!r}")
-            out.append((ds, amount))
+            amount = parse_money(am)
+            out.append((normalize_flow_date(ds), amount))
     return out
+
+
+def _money_close(a: float, b: float, tol: float = 0.005) -> bool:
+    """金额容差相等（M1）：落到分后比较，避免浮点亚分差异导致误判。"""
+    return abs(float(a) - float(b)) <= tol
+
+
+def _merge_list_by_name(staged: list[dict[str, Any]], corrected: list[dict[str, Any]],
+                        name_key: str) -> list[dict[str, Any]]:
+    """按 name 合并修正列表（M6）：修正项覆盖/新增同名条目，未提及的暂存项保留，
+    避免「部分负债/刚性修正」整体覆盖暂存清单造成的数据丢失。"""
+    by_name: dict[Any, dict[str, Any]] = {item.get(name_key): item for item in staged}
+    for item in corrected:
+        by_name[item.get(name_key)] = item
+    return list(by_name.values())
 
 
 def _dedup_balances(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -110,7 +164,9 @@ def _dedup_balances(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
             seen[key] = len(merged) - 1
             continue
         prev = merged[idx]
-        if prev["balance"] == r["balance"] and prev["monthly"] == r["monthly"]:
+        # M1：金额按「分」容差比较（≤0.005），避免浮点亚分差异误判为非重复行
+        if (_money_close(prev["balance"], r["balance"])
+                and _money_close(prev["monthly"], r["monthly"])):
             continue  # 完全重复 → 丢弃副本（修复 H1：不再双倍计入）
         # 同账户余额不同 → 求和（保守不丢钱）+ 告警，交由人工核对
         prev["balance"] = prev["balance"] + r["balance"]
@@ -158,7 +214,7 @@ def compute_candidates(balances: list[dict[str, Any]],
             rigid.append({
                 "name": r["name"],
                 "amount": float(r["balance"]),
-                "due_month": None,
+                "due_month": r.get("due_month"),  # M3：透传到期月（缺省 None，不再恒 None）
             })
     monthly = 0.0
     suspicious: list[dict[str, Any]] = []
@@ -269,7 +325,15 @@ def confirm_import(contract: dict[str, Any], token: str,
         "liabilities": True, "rigid_annual_expenses": True,
     })
     if corrections:
-        cands.update({k: v for k, v in corrections.items() if v is not None})
+        for k, v in corrections.items():
+            if v is None:
+                continue
+            # M6：列表型分类（liabilities / rigid_annual_expenses）按 name 合并修正，
+            # 而非整表覆盖暂存清单——部分修正不再丢数据。
+            if k in ("liabilities", "rigid_annual_expenses") and isinstance(v, list):
+                cands[k] = _merge_list_by_name(cands.get(k, []), v, "name")
+            else:
+                cands[k] = v
     # 仅覆盖「来源提供」或「人工修正」的分类；其余 live 原值保留，
     # 避免 CSV 缺某类（如负债/刚性）时静默清空已录入资产（#1 修复）。
     provided = dict(staged_provided)

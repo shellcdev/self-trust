@@ -540,7 +540,9 @@ def sweep_pending_config(data_dir: Path, *, now: datetime | None = None) -> dict
     for e in expired:
         work, _ = _apply_changes(work, e["changes"])
         e["status"] = "applied"
-    work["pending_config_changes"] = keep + expired
+    # M5：到期自动生效的条目已从待决队列移除（历史沉淀在 override_log），
+    # 仅保留窗内 pending 项，避免 pending_config_changes 无限堆积脏数据。
+    work["pending_config_changes"] = keep
     contract_io.write_contract(data_dir, work, actor="configurator", confirm=True)
     for e in expired:
         audit_io.append(data_dir, "override_log", {

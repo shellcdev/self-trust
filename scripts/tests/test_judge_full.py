@@ -9,7 +9,8 @@ from datetime import date
 
 from core import audit
 from core.contract import read_contract, write_contract
-from modules.judge import judge, submit
+from modules.governance import reconcile
+from modules.judge import judge, submit, finalize
 
 TODAY = date(2026, 7, 27)
 
@@ -186,3 +187,54 @@ class TestSubmitPersistence:
         r = judge(base_contract, amount=100, category="食品",
                   planned=True, today=TODAY)
         assert r["stub"] is False
+
+
+class TestPendingSpendsLedger:
+    """M4：审批通过的支出记入运行时台账 pending_spends；reconcile 并入并清空。
+
+    设计约束：corpus 属配置区，引擎（actor=engine）无权改写（§10.3），故审批不自动
+    扣 corpus；改为把实际支出记入运行时台账，对账时显式并入并清空，消除静默坑。
+    """
+
+    def test_approved_spend_recorded(self, tmp_data_dir, base_contract):
+        r = submit(tmp_data_dir, amount=1000, category="食品", planned=True, today=TODAY)
+        assert r["ok"]
+        c = read_contract(tmp_data_dir)
+        assert len(c.get("pending_spends", [])) == 1
+        sp = c["pending_spends"][0]
+        assert sp["status"] == "approved"
+        assert sp["actual_cash_out"] == 1000.0
+        assert sp["category"] == "食品"
+
+    def test_reconcile_clears_ledger_and_reports(self, tmp_data_dir, base_contract):
+        submit(tmp_data_dir, amount=1000, category="食品", planned=True, today=TODAY)
+        submit(tmp_data_dir, amount=2000, category="居住", planned=True, today=TODAY)
+        res = reconcile(tmp_data_dir, corpus=195000, today=TODAY)
+        assert res["ok"]
+        cleared = res["pending_spends_cleared"]
+        assert cleared["count"] == 2
+        assert cleared["total_actual_cash_out"] == 3000.0
+        c = read_contract(tmp_data_dir)
+        assert c.get("pending_spends", []) == []          # 清空
+        assert c["corpus"] == 195000
+
+    def test_cooldown_spend_ledger_cooling_and_linked(self, tmp_data_dir, base_contract):
+        # 大额非白名单 → 入冷静期；台账状态 cooling 且 request_id 与 pending_requests 一致
+        r = submit(tmp_data_dir, amount=200000, category="合理享受",
+                   planned=False, today=TODAY)
+        assert r["ok"]
+        c = read_contract(tmp_data_dir)
+        sp = c["pending_spends"][0]
+        assert sp["status"] == "cooling"
+        assert sp["request_id"] == r["request_id"]
+        assert any(pr["request_id"] == r["request_id"] for pr in c["pending_requests"])
+
+    def test_finalize_marks_ledger_approved(self, tmp_data_dir, base_contract):
+        r = submit(tmp_data_dir, amount=200000, category="合理享受",
+                   planned=False, today=TODAY)
+        rid = r["request_id"]
+        fr = finalize(tmp_data_dir, rid, today=TODAY)
+        assert fr["ok"]
+        c = read_contract(tmp_data_dir)
+        sp = next(s for s in c["pending_spends"] if s["request_id"] == rid)
+        assert sp["status"] == "approved"

@@ -246,3 +246,93 @@ def test_duplicate_rows_in_csv_deduped(tmp_path):
     c = mod.compute_candidates(rows)
     assert c["corpus"] == 500000
     assert len(c["liabilities"]) == 1 and c["liabilities"][0]["balance"] == 800000
+
+
+# ---------------------------------------------------------------- M1：金额精度（币种/千分位/容差）
+def test_parse_money_strips_currency_and_thousands():
+    # 容忍 ¥ $ ￥ 与千分位逗号（M2 币种容错同源）
+    assert mod.parse_money("¥1,000,000") == 1000000.0
+    assert mod.parse_money("$800,000.50") == 800000.50
+    assert mod.parse_money("￥500000") == 500000.0
+    assert mod.parse_money(" 3000 ") == 3000.0
+    assert mod.parse_money("0") == 0.0
+
+
+def test_parse_money_invalid_raises():
+    import pytest
+    with pytest.raises(ValueError):
+        mod.parse_money("abc")
+
+
+def test_near_equal_balances_treated_as_duplicate():
+    # 浮点亚分差异不应误判为非重复行（M1 容差比较）
+    rows = [
+        {"name": "招行", "balance": 500000.0, "kind": "asset", "monthly": 0},
+        {"name": "招行", "balance": 500000.0001, "kind": "asset", "monthly": 0},
+    ]
+    c = mod.compute_candidates(rows)
+    assert c["corpus"] == 500000
+    assert c["warnings"] == []                       # 视为完全重复，无告警
+
+
+def test_parse_csv_currency_and_thousands(tmp_path):
+    # M2：CSV 余额带币种符号/千分位 → 正确解析，不报错
+    # （含逗号的字段须按 CSV 规范加引号，否则会被当成分隔符）
+    f = _write_csv(tmp_path / "b.csv", "name,balance,kind,monthly", [
+        '招行,"¥1,000,000",asset,',
+        '房贷,"$800,000",liability,5000',
+    ])
+    rows = mod.parse_balances_csv(f)
+    assert rows[0]["balance"] == 1000000.0
+    assert rows[1]["balance"] == 800000.0
+
+
+# ---------------------------------------------------------------- M2：流水日期多格式容错
+def test_parse_flows_multi_date_format(tmp_path):
+    f = _write_csv(tmp_path / "f.csv", "date,amount", [
+        "2026/01/05,8000",          # 斜杠
+        "2026.02.05,9000",          # 点
+        "2026-03-05,7000",          # 标准
+    ])
+    flows = mod.parse_flows_csv(f)
+    months = sorted(ds[:7] for ds, _ in flows)
+    assert months == ["2026-01", "2026-02", "2026-03"]
+
+
+def test_parse_flows_bad_date_rejected(tmp_path):
+    import pytest
+    f = _write_csv(tmp_path / "f.csv", "date,amount", ["03/05/2026,8000"])  # 美式歧义
+    with pytest.raises(ValueError):
+        mod.parse_flows_csv(f)
+
+
+# ---------------------------------------------------------------- M3：rigid due_month 透传
+def test_rigid_due_month_parsed(tmp_path):
+    f = _write_csv(tmp_path / "b.csv", "name,balance,kind,monthly,due_month", [
+        "保费,6000,rigid,,3",
+        "旅费,12000,rigid,,",
+    ])
+    rows = mod.parse_balances_csv(f)
+    c = mod.compute_candidates(rows)
+    by_name = {r["name"]: r for r in c["rigid_annual_expenses"]}
+    assert by_name["保费"]["due_month"] == 3          # M3：到期月透传（不再恒 None）
+    assert by_name["旅费"]["due_month"] is None        # 缺省仍 None
+
+
+# ---------------------------------------------------------------- M6：部分负债修正按名合并
+def test_partial_liability_correction_merges_not_replaces(base_contract):
+    # 暂存含 房贷 + 车贷；仅修正 房贷 余额，车贷应保留（不被整表覆盖丢掉）
+    cand = _candidates(
+        liabilities=[
+            {"name": "房贷", "balance": 700000, "monthly_payment": 3341.91, "annual_rate": 0.0},
+            {"name": "车贷", "balance": 200000, "monthly_payment": 4000, "annual_rate": 0.0},
+        ])
+    tok = mod.stage_import(base_contract, cand, "x")["token"]
+    r = mod.confirm_import(base_contract, tok, corrections={
+        "liabilities": [{"name": "房贷", "balance": 750000,
+                         "monthly_payment": 3500.0, "annual_rate": 0.0}]})
+    assert r["ok"]
+    by_name = {l["name"]: l for l in base_contract["liabilities"]}
+    assert set(by_name) == {"房贷", "车贷"}            # 车贷未丢
+    assert by_name["房贷"]["balance"] == 750000         # 修正生效
+    assert by_name["车贷"]["balance"] == 200000         # 未提及者保留

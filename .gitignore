@@ -16,6 +16,10 @@ tmp/
 .idea/
 .vscode/
 
+# 跨平台
+.DS_Store
+Thumbs.db
+
 # 本地数据（真实契约/审计数据绝不入库）
 memory/
 data/

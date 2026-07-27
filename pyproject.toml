@@ -1,0 +1,21 @@
+[project]
+name = "self-trust"
+version = "0.7.7"
+description = "个人自律记账 / 资金池自我治理引擎：确定性 Python 规则引擎 + LLM 薄路由"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+keywords = ["self-accounting", "budget", "personal-finance", "cli", "skill"]
+dependencies = []  # 运行时零三方依赖，仅用 Python 标准库
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/shellcdev/self-trust"
+Repository = "https://github.com/shellcdev/self-trust"
+
+[tool.pytest.ini_options]
+testpaths = ["scripts/tests"]
+python_files = ["test_*.py", "smoke_e2e.py"]
+addopts = "-q"

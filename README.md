@@ -1,7 +1,11 @@
 # self-trust — 个人自律记账 / 资金池自我治理 skill
 
-> 工程规范：本仓遵循《工程统一规范》`docs/knowledge/reference/engineering-convention.md`（宿主工作区内，不复制内容）。
-> 设计规格（spec 真相源）：`docs/knowledge/design/self-trust-design.md`（宿主工作区内）——所有公式（F0~F8）、判定逻辑（§4.4）、schema（§2）、权限模型（§10.3）以该文档为准，本仓不复制。
+![tests](https://github.com/shellcdev/self-trust/actions/workflows/tests.yml/badge.svg)
+![license](https://img.shields.io/badge/license-MIT-blue)
+![python](https://img.shields.io/badge/python-3.9%2B-blue)
+
+> 设计规格（spec 真相源）：[`docs/DESIGN.md`](docs/DESIGN.md)（**本仓内**）——所有公式（F0~F8）、判定逻辑（§4.4）、schema（§2）、权限模型（§10.3）以该文档为准。
+> 工程规范：本仓遵循宿主工作区的《工程统一规范》；OSS 贡献无需该文档，按本仓 [`CONTRIBUTING.md`](CONTRIBUTING.md) 即可。
 
 把「现在的我」和「未来的你」拆成两个视角，用**确定性规则引擎**（Python 代码，非 AI 心算）按既定数学规则约束冲动支出。**这是个人自律记账/预算辅助工具，不具备任何法律效力**（详见设计文档 §0 性质声明）。
 
@@ -50,3 +54,27 @@ python -m pytest scripts/tests/ -q
 - `scripts/core/` — formulas（F0~F8）/ contract（三区权限）/ models（schema+状态机）/ audit（仅追加）
 - `scripts/modules/` — judge / calibrate / report / initialize
 - `STATUS.md` — 当前实现状态（真相源，被问进度先读它）
+
+## 安装 / Install
+
+本仓既是**确定性 Python 引擎**，也是 **WorkBuddy skill**（LLM 薄路由）。两种用法：
+
+- **当 Python 引擎独立使用**（无需 WorkBuddy）：克隆后直接跑 `scripts/cli.py`。
+
+  ```bash
+  git clone https://github.com/shellcdev/self-trust.git
+  cd self-trust
+  python -m pytest scripts/tests/ -q   # 验证
+  python scripts/cli.py --data-dir /tmp/st-demo init --corpus 200000 --monthly 8000 --objective "FIRE:3000000:2036-01-01"
+  ```
+
+- **当 WorkBuddy skill 安装**：把本仓放进 skills 目录（符号链接亦可），LLM 按 `SKILL.md` 路由调用 `scripts/cli.py`。
+
+  ```bash
+  # 例：链接到用户级 skills 目录
+  ln -s "$(pwd)" ~/.workbuddy/skills/assist-Z-self-trust
+  ```
+
+## 许可证 / License
+
+[MIT](LICENSE)。作者以匿名方式提交，欢迎 fork / 修改 / 提 PR。

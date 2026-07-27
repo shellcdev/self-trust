@@ -108,10 +108,13 @@ def compute_candidates(balances: list[dict[str, Any]],
     corpus = 0.0
     liabilities: list[dict[str, Any]] = []
     rigid: list[dict[str, Any]] = []
+    asset_rows = liability_rows = rigid_rows = 0
     for r in balances:
         if r["kind"] == "asset":
+            asset_rows += 1
             corpus += float(r["balance"])
         elif r["kind"] == "liability":
+            liability_rows += 1
             liabilities.append({
                 "name": r["name"],
                 "balance": abs(float(r["balance"])),
@@ -119,6 +122,7 @@ def compute_candidates(balances: list[dict[str, Any]],
                 "annual_rate": 0.0,
             })
         elif r["kind"] == "rigid":
+            rigid_rows += 1
             rigid.append({
                 "name": r["name"],
                 "amount": float(r["balance"]),
@@ -142,12 +146,21 @@ def compute_candidates(balances: list[dict[str, Any]],
                         "reason": (f"月净流入 {net} 偏离中位数 {median} 超 3 倍，"
                                    "请核对是否有重复记账 / 错账 / 币种错配"),
                     })
+    # provided：来源（CSV/手动）实际提供了哪些分类。confirm 据此只覆盖显式项，
+    # 缺类（如 CSV 只有资产、没有负债/刚性行）视为「未提供」→ 保留 live 原值（#1 修复）。
+    provided = {
+        "corpus": asset_rows > 0,
+        "monthly_contribution": bool(flows),
+        "liabilities": liability_rows > 0,
+        "rigid_annual_expenses": rigid_rows > 0,
+    }
     return {
         "corpus": corpus,
         "monthly_contribution": monthly,
         "liabilities": liabilities,
         "rigid_annual_expenses": rigid,
         "suspicious": suspicious,
+        "provided": provided,
         "summary": {
             "total_assets": corpus,
             "liabilities_count": len(liabilities),
@@ -216,12 +229,27 @@ def confirm_import(contract: dict[str, Any], token: str,
         return {"ok": False, "error": err,
                 "message": "导入 token 不匹配（须用 stage 返回的 token）"}
     cands = dict(staging["candidates"])
+    # 来源显式提供了哪些分类（stage 时标记）；旧数据无 provided 则回退为「全部覆盖」。
+    staged_provided = cands.get("provided", {
+        "corpus": True, "monthly_contribution": True,
+        "liabilities": True, "rigid_annual_expenses": True,
+    })
     if corrections:
         cands.update({k: v for k, v in corrections.items() if v is not None})
-    contract["corpus"] = float(cands["corpus"])
-    contract["monthly_contribution"] = float(cands["monthly_contribution"])
-    contract["liabilities"] = cands["liabilities"]
-    contract["rigid_annual_expenses"] = cands["rigid_annual_expenses"]
+    # 仅覆盖「来源提供」或「人工修正」的分类；其余 live 原值保留，
+    # 避免 CSV 缺某类（如负债/刚性）时静默清空已录入资产（#1 修复）。
+    provided = dict(staged_provided)
+    if corrections:
+        for k in corrections:
+            provided[k] = True
+    if provided.get("corpus"):
+        contract["corpus"] = float(cands["corpus"])
+    if provided.get("monthly_contribution"):
+        contract["monthly_contribution"] = float(cands["monthly_contribution"])
+    if provided.get("liabilities"):
+        contract["liabilities"] = cands["liabilities"]
+    if provided.get("rigid_annual_expenses"):
+        contract["rigid_annual_expenses"] = cands["rigid_annual_expenses"]
     contract["corpus_status"] = "imported_confirmed"
     contract["pending_import"] = None
     return {

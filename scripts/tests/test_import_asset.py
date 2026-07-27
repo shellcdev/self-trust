@@ -137,3 +137,66 @@ def test_wrong_token_rejected(base_contract):
     assert r1["ok"] is False and r1["error"] == "bad_token"
     r2 = mod.cancel_import(base_contract, "deadbeef")
     assert r2["ok"] is False and r2["error"] == "bad_token"
+
+
+# ---------------------------------------------------------------- #1 修复：来源缺类不得静默清空 live
+def _candidates_with_provided(corpus=150000, monthly=8000, liabilities=None, rigid=None,
+                              provided=None):
+    c = _candidates(corpus, monthly, liabilities, rigid)
+    c["provided"] = provided or {
+        "corpus": True, "monthly_contribution": True,
+        "liabilities": True, "rigid_annual_expenses": True,
+    }
+    return c
+
+
+def _seed_live_liab_rigid(contract):
+    contract["liabilities"] = [{"name": "旧房贷", "balance": 500000,
+                                "monthly_payment": 3000.0, "annual_rate": 0.0}]
+    contract["rigid_annual_expenses"] = [{"name": "旧保费", "amount": 6000, "due_month": None}]
+    contract["monthly_contribution"] = 8000
+
+
+def test_csv_assets_only_preserves_live_liabilities(base_contract):
+    # 契约已录入房贷/保费；CSV 只含资产行（无 liability/rigid 行）
+    _seed_live_liab_rigid(base_contract)
+    rows = [{"name": "招行", "balance": 120000, "kind": "asset", "monthly": 0},
+            {"name": "支付宝", "balance": 30000, "kind": "asset", "monthly": 0}]
+    cand = mod.compute_candidates(rows)            # provided.liabilities/rigid = False
+    assert cand["provided"]["liabilities"] is False
+    assert cand["provided"]["rigid_annual_expenses"] is False
+    tok = mod.stage_import(base_contract, cand, "qianji")["token"]
+    r = mod.confirm_import(base_contract, tok)
+    assert r["ok"]
+    # 资产更新，负债/刚性/月供保留旧值，未被清空（#1）
+    assert base_contract["corpus"] == 150000
+    assert len(base_contract["liabilities"]) == 1
+    assert base_contract["liabilities"][0]["name"] == "旧房贷"
+    assert base_contract["rigid_annual_expenses"][0]["name"] == "旧保费"
+    assert base_contract["monthly_contribution"] == 8000
+
+
+def test_csv_with_liability_row_overwrites(base_contract):
+    _seed_live_liab_rigid(base_contract)
+    rows = [{"name": "招行", "balance": 150000, "kind": "asset", "monthly": 0},
+            {"name": "新房贷", "balance": 700000, "kind": "liability", "monthly": 3341.91}]
+    cand = mod.compute_candidates(rows)
+    assert cand["provided"]["liabilities"] is True
+    tok = mod.stage_import(base_contract, cand, "qianji")["token"]
+    mod.confirm_import(base_contract, tok)
+    assert len(base_contract["liabilities"]) == 1
+    assert base_contract["liabilities"][0]["name"] == "新房贷"   # 显式提供 → 覆盖
+
+
+def test_manual_corpus_only_preserves_others(base_contract):
+    _seed_live_liab_rigid(base_contract)
+    cand = _candidates_with_provided(
+        corpus=180000, provided={"corpus": True, "monthly_contribution": False,
+                                  "liabilities": False, "rigid_annual_expenses": False})
+    tok = mod.stage_import(base_contract, cand, "manual")["token"]
+    r = mod.confirm_import(base_contract, tok)     # 无 corrections
+    assert r["ok"]
+    assert base_contract["corpus"] == 180000
+    assert base_contract["liabilities"][0]["name"] == "旧房贷"
+    assert base_contract["rigid_annual_expenses"][0]["name"] == "旧保费"
+    assert base_contract["monthly_contribution"] == 8000

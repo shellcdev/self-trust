@@ -265,12 +265,20 @@ def cmd_import_asset(args) -> int:
     elif args.corpus is not None:
         liabilities = [_parse_liability(s) for s in (args.liabilities or [])]
         rigid = [_parse_rigid(s) for s in (args.rigid or [])]
+        # provided：手动录入也只标记「显式传参」的分类，confirm 仅覆盖这些（#1 修复）
+        provided = {
+            "corpus": args.corpus is not None,
+            "monthly_contribution": args.monthly is not None,
+            "liabilities": args.liabilities is not None,
+            "rigid_annual_expenses": args.rigid is not None,
+        }
         candidates = {
             "corpus": float(args.corpus),
             "monthly_contribution": float(args.monthly) if args.monthly is not None else 0.0,
             "liabilities": liabilities,
             "rigid_annual_expenses": rigid,
             "suspicious": [],
+            "provided": provided,
             "summary": {
                 "total_assets": float(args.corpus),
                 "liabilities_count": len(liabilities),

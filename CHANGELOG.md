@@ -1,5 +1,10 @@
 # CHANGELOG — self-trust
 
+## [0.7.1] - 2026-07-28
+
+### Fixed
+- **§7.3 导入「缺类静默清空」数据丢失隐患（#1）**：`compute_candidates` 现返回 `provided` 标记（按余额行/流水是否实际存在判断来源提供了哪些分类）；`confirm_import` 仅覆盖「来源显式提供」或「人工修正（corrections）」的分类，其余 live 原值保留。修复前一份只含资产行的 `balances.csv` 在 confirm 后会把已录入的房贷、保费等负债/刚性支出静默清空。手动录入路径（`cli import-asset --corpus/--monthly/--liabilities/--rigid`）stage 时同步标记 `provided`，局部修正不再误伤其他分类。测试 238 → 241（新增 3 例：CSV 仅资产保留 live 负债/刚性、CSV 含负债行覆盖、手动 --corpus 仅保留其余）。
+
 ## [0.7.0] - 2026-07-28
 
 ### Added

@@ -1,5 +1,13 @@
 # CHANGELOG — self-trust
 
+## [0.5.0] - 2026-07-27
+
+### Added
+- §5.4 冷却窗（削弱自身修改 1 日冷静窗）：`safety_cushion.months` 下调 / `distribution_rules.invest_ratio` 下调等「削弱自身」的护栏修改，确认后**不立即落盘**，入 `pending_config_changes` 队列、给 **1 个自然日**冷静窗；窗内可无理由撤回（`customize --withdraw --request-id <id> --token <撤回token>`，撤回 token 确认时返回），到期懒惰扫描（`report` 交互时 / `customize --review`）自动生效并写 `override_log event=contract_customize_cooled`；其余修改（含上调护栏、optimization_goal 切换、白名单增删）不属「削弱自身」，仍立即落盘。复用 §5.1 冷静期范式（pending 持久队列 + 到期终裁 + 二次提醒）。
+- 运行时态字段 `pending_config_changes` 注册为 `Zone.RUNTIME`（models.FIELD_ZONES），与 `pending_requests` 同位，三区权限不拦。
+- `cli.py customize` 新增 `--review`（冷却窗复查：懒惰扫描过期项自动生效 + 列窗内待决 + 二次提醒）、`--withdraw` + `--request-id`（冷却窗撤回）。
+- 测试 207 → 217：新增 test_customize_cooldown（削弱→pending 不落盘 / 非削弱→立即 / 窗内撤回 / 过期自动生效+override_log / 过期撤回拒 / bad_token / stale_token 不建 pending / review 列+扫）；test_customize 中 invest_ratio 用例改为上调值以保留「立即落盘+日志」断言（削弱路径移交新文件）。
+
 ## [0.4.0] - 2026-07-27
 
 ### Added

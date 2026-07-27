@@ -2,7 +2,7 @@
 
 > 真相源在本文件（仓内 dev doc），不在记忆。状态标记：✅ 已实现 / ⚠️ 部分（骨架可跑，业务未完） / 待实施 / ❌ 已废弃。
 
-更新：2026-07-27（核心闭环实装完成；§7.2 演示真实干跑 + §3.1 平滑过渡计数器已收尾；记账自定义 §5.4 闸门入口 + 模式切换/白名单增删 已收口，207 单测）
+更新：2026-07-27（核心闭环实装完成；§7.2 演示真实干跑 + §3.1 平滑过渡计数器已收尾；记账自定义 §5.4 闸门入口 + 模式切换/白名单增删 + **§5.4 冷却窗** 已收口，217 单测）
 
 ## 当前阶段：核心闭环（初始化→审批→冷静期→报表→校准→奖励→治理）已通
 
@@ -23,11 +23,11 @@
 | 申诉/覆写（§5.2） | ✅ | 见 governance |
 | 记账重置（§7.1.1） | ✅ | 见 governance |
 | 第三方导入（§7.3） | 待实施 | 首版砍掉（§8.3 取舍 #3）；imported_pending 审批拦截已实装 |
-| 记账自定义（§5.4 / §7.1 / §9） | ✅ | `modules/customize.py` + `cli.py customize` 子命令：增量覆盖配置区（`--set` 嵌套 DOTPATH / `--add-objective` / `--whitelist-add` / `--whitelist-remove`）；预览（needs_confirm + token + 具体数字风险提示）→ 带 token 确认落盘 + 写 override_log；§5.4 二次确认闸门由底层 `write_contract(actor="configurator", confirm=True)` 强制；未知字段/审计字段显式 GuardError。同时解锁「记账模式（optimization_goal 切换）」「记账切模式（mode 切换）」「记账白名单 加/删」（§9 三项待实施已收口） |
+| 记账自定义（§5.4 / §7.1 / §9） | ✅ | `modules/customize.py` + `cli.py customize` 子命令：增量覆盖配置区（`--set` 嵌套 DOTPATH / `--add-objective` / `--whitelist-add` / `--whitelist-remove`）；预览（needs_confirm + token + 具体数字风险提示）→ 带 token 确认落盘 + 写 override_log；§5.4 二次确认闸门由底层 `write_contract(actor="configurator", confirm=True)` 强制；未知字段/审计字段显式 GuardError。同时解锁「记账模式（optimization_goal 切换）」「记账切模式（mode 切换）」「记账白名单 加/删」（§9 三项待实施已收口）。**§5.4 冷却窗（可选收紧，已实装）**：`safety_cushion.months` 下调 / `invest_ratio` 下调等「削弱自身」修改，确认后入 `pending_config_changes` 队列、给 1 个自然日冷静窗，窗内可无理由撤回（`--withdraw` + 撤回 token）、到期懒惰扫描（`report`/`--review`）自动生效 + 写 `override_log event=contract_customize_cooled`；非削弱修改（含上调护栏）立即落盘。运行时态字段 `pending_config_changes` 已注册 RUNTIME 区（models.FIELD_ZONES） |
 | 模拟演示（§7.2） | ✅ | demo_scenarios 真实干跑：有契约用真实参数（deepcopy 隔离）/ 无契约用演示专用默认值（纯内存）；三场景金额首选 §7.2 表格值、不匹配时由引擎中间变量确定性推导；干跑不落盘不入队不写审计；init 回执自动附 demo，`cli.py demo` 可重看 |
 | 平滑过渡计数器（§3.1） | ✅ | modules/streaks.py：report_streak 连续自然日 +1（同日幂等/断档重计）、gap_streak 惰性刷新；挂载：run_report/reconcile 算上报、judge.submit 只观察；阈值 7 天→建议 ledger / 14 天→建议 conversational（仅 hybrid，软建议带真实计数，引擎不自动改 mode） |
 | SKILL.md + references + templates | ✅ | 已与实装后 CLI 真实接口对齐（命令表/参数/输出字段/全局参数脚注，2026-07-27） |
-| 测试 | ✅ | 191 通过：formulas / contract_guard（含运行态子字段边界）/ audit / judge / judge_full / cooldown / calibrate / report / reward / reset_appeal / demo（§7.2 干跑+隔离）/ streaks（§3.1 递增/清零/阈值/挂载点）；另 smoke_e2e.py 端到端 12/12 |
+| 测试 | ✅ | 217 通过：formulas / contract_guard（含运行态子字段边界）/ audit / judge / judge_full / cooldown / calibrate / report / reward / reset_appeal / demo（§7.2 干跑+隔离）/ streaks（§3.1 递增/清零/阈值/挂载点）/ **customize_cooldown**（削弱→pending不落盘/非削弱→立即/窗内撤回/过期自动生效/过期撤回拒/预览标志）；另 smoke_e2e.py 端到端 12/12 |
 
 ## 下一步（可选，非阻塞）
 
@@ -36,3 +36,4 @@
 3. §7.3 第三方导入通道（imported_pending→confirmed 流程；拦截已在）
 4. ~~记账自定义（§5.4 闸门入口）+ 模式切换/白名单增删~~ ✅ 已完成（2026-07-27：`modules/customize.py` + `cli.py customize` 子命令，预览→带 token 确认落盘 + override_log，207 单测）
 5. ~~SKILL.md / references 按实装后的 CLI 参数表同步措辞~~ ✅ 已完成（2026-07-27：SKILL.md 命令表全量重写 + approval/exceptions/report/data-modes/init/contract-schema 六份 references 对齐真实子命令与 --json 输出字段）
+6. ~~§5.4 冷却窗（削弱自身修改 1 日冷静窗 + 窗内撤回 + 懒惰过期自动生效）~~ ✅ 已完成（2026-07-27：`pending_config_changes` 运行时态队列 + withdraw_config/sweep_pending_config/review_config + cli `customize --withdraw/--review` + report 懒惰扫描；217 单测）

@@ -18,9 +18,11 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+import secrets
 
 from core import audit as audit_io
 from core import contract as contract_io
@@ -150,6 +152,26 @@ def _risk_warnings(contract: dict[str, Any], changed: dict[str, Any]) -> list[st
     return warns
 
 
+def _is_weakening(changed: dict[str, Any]) -> bool:
+    """§5.4 冷却窗：仅「削弱自身」的护栏修改需 1 个自然日冷静窗——
+
+    safety_cushion.months 下调 或 distribution_rules.invest_ratio 下调。
+    其余护栏修改（上调安全垫 / 切 optimization_goal / 增删白名单 / 增删目标）
+    不属「削弱自身」，立即生效、不进冷却窗。
+    """
+    if "safety_cushion" in changed:
+        om = changed["safety_cushion"]["from"].get("months")
+        nm = changed["safety_cushion"]["to"].get("months")
+        if om is not None and nm is not None and nm < om:
+            return True
+    if "distribution_rules" in changed:
+        od = changed["distribution_rules"]["from"].get("invest_ratio")
+        nd = changed["distribution_rules"]["to"].get("invest_ratio")
+        if od is not None and nd is not None and nd < od:
+            return True
+    return False
+
+
 def _apply_changes(contract: dict[str, Any], changes: dict[str, Any]):
     """将 changes 规范应用到契约深拷贝，返回 (new_contract, touched_top_fields)。"""
     new = copy.deepcopy(contract)
@@ -240,16 +262,21 @@ def preview(data_dir: Path, changes: dict[str, Any]) -> dict[str, Any]:
     changed = _diff(contract, new)
     touched_guard = sorted(t for t in changed if t in CORE_GUARD_FIELDS)
     risks = _risk_warnings(contract, changed)
+    weakening = _is_weakening(changed)
     tok = _token(changes, _contract_sha(contract))
     return {
         "ok": True, "needs_confirm": True, "preview": True,
         "changed_fields": changed,
         "touched_guard_fields": touched_guard,
         "risk_warnings": risks,
+        "cooldown_required": weakening,
         "token": tok,
         "message": (
-            "以下修改将在确认后落盘（§5.4 二次确认）。核心护栏字段已标注风险提示；"
-            "回复确认修改（带本 token）即生效。")
+            ("⚠️ 检测到「削弱自身」的护栏修改，确认后将进入 1 个自然日冷静窗"
+             "（窗内可无理由撤回，到期前二次提醒并自动生效），不立即落盘。"
+             if weakening else
+             "以下修改将在确认后落盘（§5.4 二次确认）。核心护栏字段已标注风险提示；")
+            + "回复确认修改（带本 token）即生效。")
         if touched_guard else
         ("以下非核心参数修改将在确认后落盘（普通确认）。"
          "回复确认修改（带本 token）即生效。"),
@@ -258,7 +285,13 @@ def preview(data_dir: Path, changes: dict[str, Any]) -> dict[str, Any]:
 
 def apply(data_dir: Path, changes: dict[str, Any], *, confirm: bool,
           token: str | None, reason: str) -> dict[str, Any]:
-    """应用修改：confirm=False → 返回预览；confirm=True + 正确 token → 落盘 + 写 override_log。"""
+    """应用修改：confirm=False → 返回预览；confirm=True + 正确 token → 落盘 + 写 override_log。
+
+    §5.4 冷却窗：若变更属「削弱自身」（safety_cushion 月数下调 / invest_ratio 下调），
+    确认后**不立即落盘**，而是入 `pending_config_changes` 队列、给 1 个自然日冷静窗，
+    窗内可无理由撤回（withdraw_config），到期懒惰扫描自动生效（sweep_pending_config）。
+    其余变更（含非削弱护栏修改）确认后立即落盘。
+    """
     contract = contract_io.read_contract(data_dir)
     expected = _token(changes, _contract_sha(contract))
     if not confirm:
@@ -275,7 +308,37 @@ def apply(data_dir: Path, changes: dict[str, Any], *, confirm: bool,
     touched_guard = sorted(t for t in changed if t in CORE_GUARD_FIELDS)
     risks = _risk_warnings(contract, changed)
 
-    # 落盘：configurator + confirm=True 通过 §5.4 闸门；未知/审计字段由底层 GuardError
+    # —— §5.4 冷却窗：削弱自身 → 进 pending，不落盘配置 ——
+    if _is_weakening(changed):
+        now = datetime.now()
+        entry = {
+            "request_id": secrets.token_hex(6),
+            "created_at": now.isoformat(timespec="seconds"),
+            "expires_at": (now + timedelta(days=1)).isoformat(timespec="seconds"),
+            "changes": changes,
+            "preview": {
+                "changed_fields": changed,
+                "touched_guard_fields": touched_guard,
+                "risk_warnings": risks,
+            },
+            "withdraw_token": secrets.token_hex(8),
+            "status": "pending",
+        }
+        contract.setdefault("pending_config_changes", []).append(entry)
+        # 仅落盘运行时态（pending 队列），配置区原值未动 → 冷却窗内不生效
+        contract_io.write_contract(data_dir, contract, actor="configurator", confirm=True)
+        return {
+            "ok": True, "applied": False, "pending": True,
+            "cooldown_days": 1,
+            "request_id": entry["request_id"],
+            "withdraw_token": entry["withdraw_token"],
+            "expires_at": entry["expires_at"],
+            "touched_guard_fields": touched_guard,
+            "risk_warnings": risks,
+            "note": "削弱自身修改已进入 1 日冷静窗（§5.4）；窗内可无理由撤回，到期自动生效。",
+        }
+
+    # —— 其余变更：立即落盘 ——
     contract_io.write_contract(data_dir, new, actor="configurator", confirm=True)
     audit_io.append(data_dir, "override_log", {
         "time": _now(), "event": "contract_customize",
@@ -291,4 +354,97 @@ def apply(data_dir: Path, changes: dict[str, Any], *, confirm: bool,
         "touched_guard_fields": touched_guard,
         "risk_warnings": risks,
         "note": "配置区增量覆盖完成；审计区 override_log 已追加（§10.1 仅追加）",
+    }
+
+
+def withdraw_config(data_dir: Path, request_id: str, token: str,
+                    *, now: datetime | None = None) -> dict[str, Any]:
+    """§5.4 冷却窗内无理由撤回：仅 pending 且未过期可撤；过期则修改已自动生效，不可撤。"""
+    contract = contract_io.read_contract(data_dir)
+    pcc = contract.get("pending_config_changes", []) or []
+    entry = next((e for e in pcc if e["request_id"] == request_id), None)
+    if entry is None or entry["status"] != "pending":
+        return {"ok": False, "error": "not_found",
+                "message": f"未找到待撤回的冷却窗修改（request_id={request_id}）"}
+    if entry["withdraw_token"] != token:
+        return {"ok": False, "error": "bad_token",
+                "message": "撤回 token 不匹配（须用确认时返回的 withdraw_token）"}
+    now = now or datetime.now()
+    if datetime.fromisoformat(entry["expires_at"]) <= now:
+        return {"ok": False, "error": "expired",
+                "message": "冷却窗已过期，修改已自动生效，不可撤回（见 override_log）"}
+    contract["pending_config_changes"] = [
+        e for e in pcc if e["request_id"] != request_id]
+    contract_io.write_contract(data_dir, contract, actor="configurator", confirm=True)
+    audit_io.append(data_dir, "override_log", {
+        "time": _now(), "event": "config_change_withdrawn",
+        "request_id": request_id,
+        "changed_fields": entry["preview"]["changed_fields"],
+        "reason": "冷却窗内无理由撤回（§5.4）",
+    })
+    return {"ok": True, "withdrawn": True, "request_id": request_id,
+            "note": "冷却窗修改已撤回，配置区未变动。"}
+
+
+def sweep_pending_config(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
+    """§5.4 冷却窗懒惰终裁：过期未撤回的 pending 配置修改自动生效（复用 §5.1 范式）。
+
+    返回本次自动生效的 request_id 列表；无过期项则返回空。
+    """
+    now = now or datetime.now()
+    contract = contract_io.read_contract(data_dir)
+    pcc = contract.get("pending_config_changes", []) or []
+    keep: list[dict[str, Any]] = []
+    expired: list[dict[str, Any]] = []
+    for e in pcc:
+        if e["status"] == "pending" and datetime.fromisoformat(e["expires_at"]) <= now:
+            expired.append(e)
+        else:
+            keep.append(e)
+    if not expired:
+        return {"ok": True, "applied": [], "pending_count": len(keep)}
+
+    work = copy.deepcopy(contract)
+    for e in expired:
+        work, _ = _apply_changes(work, e["changes"])
+        e["status"] = "applied"
+    work["pending_config_changes"] = keep + expired
+    contract_io.write_contract(data_dir, work, actor="configurator", confirm=True)
+    for e in expired:
+        audit_io.append(data_dir, "override_log", {
+            "time": _now(), "event": "contract_customize_cooled",
+            "request_id": e["request_id"],
+            "changed_fields": e["preview"]["changed_fields"],
+            "touched_guard_fields": e["preview"]["touched_guard_fields"],
+            "risk_warnings": e["preview"]["risk_warnings"],
+            "reason": "冷却窗到期自动生效（§5.4）",
+        })
+    return {"ok": True, "applied": [e["request_id"] for e in expired],
+            "pending_count": len(keep)}
+
+
+def review_config(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
+    """§5.4 冷却窗复查：先懒惰扫描过期项自动生效，再列出仍在窗内的待决修改 + 二次提醒。"""
+    swept = sweep_pending_config(data_dir, now=now)
+    contract = contract_io.read_contract(data_dir)
+    now = now or datetime.now()
+    pcc = contract.get("pending_config_changes", []) or []
+    items: list[dict[str, Any]] = []
+    for e in pcc:
+        if e["status"] != "pending":
+            continue
+        exp = datetime.fromisoformat(e["expires_at"])
+        days_left = (exp.date() - now.date()).days
+        items.append({
+            "request_id": e["request_id"],
+            "expires_at": e["expires_at"],
+            "days_left": days_left,
+            "kind": "expiring" if days_left <= 1 else "cooling",
+            "changed_fields": e["preview"]["changed_fields"],
+            "risk_warnings": e["preview"]["risk_warnings"],
+        })
+    return {
+        "ok": True, "swept": swept["applied"], "pending": items,
+        "message": ("冷却窗内可无理由撤回（customize --withdraw --request-id X --token T）；"
+                    "到期前二次提醒并自动生效（§5.4，复用 §5.1 机制）。"),
     }

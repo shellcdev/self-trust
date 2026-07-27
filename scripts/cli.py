@@ -111,6 +111,8 @@ def cmd_demo(args) -> int:
 
 def cmd_report(args) -> int:
     data_dir = contract_io.resolve_data_dir(args.data_dir)
+    # §5.4 冷却窗懒惰终裁：报表交互时扫描过期项自动生效（复用 §5.1 范式）
+    mod_customize.sweep_pending_config(data_dir)
     result = mod_report.run_report(data_dir, today=_today(args))
     return _emit(result, 0 if result.get("ok") else 1)
 
@@ -187,6 +189,18 @@ def cmd_log(args) -> int:
 
 def cmd_customize(args) -> int:
     data_dir = contract_io.resolve_data_dir(args.data_dir)
+    # 冷却窗复查（先懒惰扫描过期项自动生效，再列待决 + 二次提醒）
+    if args.review:
+        result = mod_customize.review_config(data_dir)
+        return _emit(result, 0 if result.get("ok") else 1)
+    # 冷却窗撤回（窗内无理由撤回）
+    if args.withdraw:
+        if not args.request_id or not args.token:
+            return _emit({"ok": False, "error": "invalid",
+                          "message": "--withdraw 须同时带 --request-id 与 --token（撤回 token）"}, 4)
+        result = mod_customize.withdraw_config(data_dir, args.request_id, args.token)
+        return _emit(result, 0 if result.get("ok") else 1)
+    # 预览 / 应用（§5.4 二次确认；削弱自身进冷却窗）
     try:
         changes = mod_customize.build_changes(args)
     except ValueError as e:
@@ -294,9 +308,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--annual-cap", type=float, default=None,
                     help="白名单年上限（须与 --whitelist-add 同传）")
     sp.add_argument("--whitelist-remove", default=None, help="移除极速审批类目 名称")
+    sp.add_argument("--review", action="store_true",
+                    help="冷却窗复查：懒惰扫描过期项自动生效，列出窗内待决修改 + 二次提醒")
+    sp.add_argument("--withdraw", action="store_true",
+                    help="冷却窗撤回：须同时带 --request-id 与 --token（撤回 token）")
+    sp.add_argument("--request-id", default=None, help="冷却窗修改 id（复查/撤回用）")
     sp.add_argument("--confirm", action="store_true",
                     help="二次确认（须同时带预览返回的 --token 才落盘）")
-    sp.add_argument("--token", default=None, help="预览返回的确认 token（防漂移）")
+    sp.add_argument("--token", default=None,
+                    help="预览返回的确认 token（防漂移）；或 --withdraw 时的撤回 token")
     sp.add_argument("--reason", default=None, help="自定义原因（写入 override_log）")
     sp.set_defaults(func=cmd_customize)
 

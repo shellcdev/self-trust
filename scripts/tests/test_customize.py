@@ -79,14 +79,15 @@ def test_apply_with_wrong_token_rejected(tmp_data_dir, base_contract):
 
 
 def test_apply_with_token_writes_and_logs(tmp_data_dir, base_contract):
+    # 非削弱（0.5→0.7 上调）走立即落盘路径；削弱路径见 test_customize_cooldown.py
     preview = mod_customize.preview(
-        tmp_data_dir, _changes_for_set("distribution_rules.invest_ratio", 0.3))
+        tmp_data_dir, _changes_for_set("distribution_rules.invest_ratio", 0.7))
     res = mod_customize.apply(
-        tmp_data_dir, _changes_for_set("distribution_rules.invest_ratio", 0.3),
+        tmp_data_dir, _changes_for_set("distribution_rules.invest_ratio", 0.7),
         confirm=True, token=preview["token"], reason="测试调参")
     assert res["ok"] and res["applied"]
     after = contract_io.read_contract(tmp_data_dir)
-    assert after["distribution_rules"]["invest_ratio"] == 0.3
+    assert after["distribution_rules"]["invest_ratio"] == 0.7
     # override_log 追加
     logs = audit_io.read_all(tmp_data_dir, "override_log")
     assert any(r.get("event") == "contract_customize" for r in logs)

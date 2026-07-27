@@ -43,6 +43,7 @@ FIELD_ZONES: dict[str, Zone] = {
     "whitelist_cap_year": Zone.RUNTIME,
     "appeal_count": Zone.RUNTIME,
     "pending_requests": Zone.RUNTIME,
+    "pending_config_changes": Zone.RUNTIME,   # §5.4 冷却窗：削弱自身修改的待生效队列
     "rebalance_override": Zone.RUNTIME,
     "last_calibrate": Zone.RUNTIME,
     "last_report_date": Zone.RUNTIME,
@@ -164,6 +165,7 @@ class Contract:
     whitelist_cap_year: Optional[int] = None
     appeal_count: int = 0
     pending_requests: list[dict[str, Any]] = field(default_factory=list)
+    pending_config_changes: list[dict[str, Any]] = field(default_factory=list)
     optimization_goal: str = "balanced"   # wealth | balanced | objective
     rebalance_override: Optional[dict[str, Any]] = None
     last_calibrate: Optional[str] = None

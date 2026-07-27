@@ -34,6 +34,8 @@ from modules import initialize as mod_init   # noqa: E402
 from modules import judge as mod_judge       # noqa: E402
 from modules import report as mod_report     # noqa: E402
 from modules import reward as mod_reward     # noqa: E402
+from modules import import_asset as mod_import  # noqa: E402
+from modules.customize import _parse_liability, _parse_rigid  # noqa: E402
 
 
 def _emit(payload: dict, code: int = 0) -> int:
@@ -215,6 +217,83 @@ def cmd_customize(args) -> int:
     return _emit(result, 0 if result.get("ok") else 1)
 
 
+def cmd_import_asset(args) -> int:
+    """§7.3 第三方资产导入：CSV/手动 → 暂存(imported_pending) → 核对确认(confirm)。"""
+    data_dir = contract_io.resolve_data_dir(args.data_dir)
+    contract = contract_io.read_contract(data_dir)  # 须先 init
+
+    if args.confirm:
+        if not args.token:
+            return _emit({"ok": False, "error": "invalid",
+                          "message": "confirm 须带 --token（stage 返回）"}, 4)
+        corrections: dict[str, Any] = {}
+        if args.corpus is not None:
+            corrections["corpus"] = args.corpus
+        if args.monthly is not None:
+            corrections["monthly_contribution"] = args.monthly
+        if args.liabilities is not None:
+            corrections["liabilities"] = [_parse_liability(s) for s in args.liabilities]
+        if args.rigid is not None:
+            corrections["rigid_annual_expenses"] = [_parse_rigid(s) for s in args.rigid]
+        import_source = (contract.get("pending_import") or {}).get("source", "manual")
+        result = mod_import.confirm_import(
+            contract, args.token, corrections or None, today=_today(args))
+        if result.get("ok"):
+            contract_io.write_contract(data_dir, contract, actor="configurator", confirm=True)
+            audit_io.append(data_dir, "override_log", {
+                "time": _now_import(), "event": "asset_import_confirmed",
+                "source": import_source,
+                "applied": result.get("applied"),
+                "reason": "第三方资产人工核对确认（§7.3）",
+            })
+        return _emit(result, 0 if result.get("ok") else 1)
+
+    if args.cancel:
+        if not args.token:
+            return _emit({"ok": False, "error": "invalid",
+                          "message": "cancel 须带 --token（stage 返回）"}, 4)
+        result = mod_import.cancel_import(contract, args.token)
+        if result.get("ok"):
+            contract_io.write_contract(data_dir, contract, actor="configurator", confirm=True)
+        return _emit(result, 0 if result.get("ok") else 1)
+
+    # —— 发起导入（stage）——
+    if args.balances:
+        balances = mod_import.parse_balances_csv(args.balances)
+        flows = mod_import.parse_flows_csv(args.flows) if args.flows else None
+        candidates = mod_import.compute_candidates(balances, flows)
+    elif args.corpus is not None:
+        liabilities = [_parse_liability(s) for s in (args.liabilities or [])]
+        rigid = [_parse_rigid(s) for s in (args.rigid or [])]
+        candidates = {
+            "corpus": float(args.corpus),
+            "monthly_contribution": float(args.monthly) if args.monthly is not None else 0.0,
+            "liabilities": liabilities,
+            "rigid_annual_expenses": rigid,
+            "suspicious": [],
+            "summary": {
+                "total_assets": float(args.corpus),
+                "liabilities_count": len(liabilities),
+                "rigid_count": len(rigid),
+                "months_flow": 0,
+            },
+        }
+    else:
+        return _emit({"ok": False, "error": "invalid",
+                      "message": "须提供 --balances <csv> 或 --corpus <X> 以发起导入"}, 4)
+
+    result = mod_import.stage_import(
+        contract, candidates, args.source or "manual", today=_today(args))
+    if result.get("ok"):
+        contract_io.write_contract(data_dir, contract, actor="configurator", confirm=True)
+    return _emit(result, 0 if result.get("ok") else 1)
+
+
+def _now_import() -> str:
+    from datetime import datetime
+    return datetime.now().isoformat(timespec="seconds")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="self-trust",
@@ -307,6 +386,28 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--name", default="approval_log",
                     choices=sorted(audit_io.VALID_LOGS))
     sp.set_defaults(func=cmd_log)
+
+    sp = sub.add_parser("import-asset", help="第三方资产导入（§7.3，CSV/手动 → 核对 → 确认生效）")
+    sp.add_argument("--balances", default=None,
+                    help="余额 CSV（name,balance,kind[,monthly]；kind∈asset/liability/rigid）")
+    sp.add_argument("--flows", default=None,
+                    help="流水 CSV（date,amount，可选，用于推算月均净流入）")
+    sp.add_argument("--corpus", type=float, default=None,
+                    help="手动录入总资产（替代 CSV；或 confirm 时修正候选）")
+    sp.add_argument("--monthly", type=float, default=None,
+                    help="月度净流入（手动录入或 confirm 时修正候选）")
+    sp.add_argument("--liabilities", action="append", default=None,
+                    help="负债 名称:余额[:月供[:年利率]]（手动录入或 confirm 时修正）")
+    sp.add_argument("--rigid", action="append", default=None,
+                    help="刚性年支出 名称:金额[:due_month]（手动录入或 confirm 时修正）")
+    sp.add_argument("--source", default=None,
+                    help="数据源名称（随手记/钱迹/custom-csv…，仅作标记）")
+    sp.add_argument("--confirm", action="store_true",
+                    help="核对确认：带 --token 将候选落到资产池（imported_confirmed）")
+    sp.add_argument("--cancel", action="store_true",
+                    help="放弃导入：带 --token 还原 corpus_status 并清 staging")
+    sp.add_argument("--token", default=None, help="stage 返回的确认 token")
+    sp.set_defaults(func=cmd_import_asset)
 
     sp = sub.add_parser("customize", help="记账自定义：增量覆盖契约配置区参数（§5.4 二次确认）")
     sp.add_argument("--set", action="append", default=None,

@@ -47,7 +47,7 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 | 记账白名单 加/删 | 极速审批应急类目管理（记账自定义子集）：`python scripts/cli.py customize --whitelist-add 名称 --per-tx-cap 元 --annual-cap 元` / `--whitelist-remove 名称`（核心护栏字段，触发 §5.4 风险提示） | references/exceptions.md |
 | 记账负债/刚性支出 增删 | 负债与刚性年支出建账（如实上报，影响净资产口径）：`python scripts/cli.py customize --add-liability "房贷:800000:5000:0.04"` / `--remove-liability 房贷` / `--add-rigid "保费:12000:3"` / `--remove-rigid 保费` | references/exceptions.md |
 | 记账记录购房 | 已购房产落账（首付打 liquid + 房贷变负债）：`python scripts/cli.py customize --record-home-purchase "1000000:0.3"`（房价:首付比例[:期限年[:利率]]；确认后 corpus-=首付、liabilities 追加房贷及月供） | references/exceptions.md |
-| 第三方导入 | 待实施（见 STATUS.md）；`imported_pending` 审批拦截已实装 | 对应 references |
+| 第三方导入 [工具名] | CSV/手动拉取资产并**人工核对**后生效（§7.3，数据中立硬约束）：`python scripts/cli.py import-asset --balances <csv> [--flows <csv>] [--source 钱迹]`（暂存→返回 token + 摘要 + 可疑流水）→ 核对修正后 `import-asset --confirm --token <token>` 落盘（corpus_status: imported_pending→imported_confirmed）；放异 `import-asset --cancel --token <token>`。无 CSV 可手动：`import-asset --corpus 150000 --monthly 8000 --liabilities "房贷:700000:3341.91" --rigid "保费:6000"`。导入待核对（imported_pending）锁定全部审批，跳过核对不得审批 | references/data-modes.md |
 
 **全局参数**（所有子命令通用，只说明这一次）：
 - `--data-dir <path>`：数据目录（优先级：命令行 > `SELFTRUST_DATA_DIR` > 默认 `<home>/.claw/self-trust/`）；
@@ -73,4 +73,4 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 
 ## 状态
 
-核心闭环（初始化→审批→冷静期→报表→校准→奖励→申诉/覆写→重置→对账）+ §7.2 演示干跑 + §3.1 平滑过渡计数器 + 记账自定义（§5.4 闸门入口，含模式切换/白名单增删/**冷却窗**）+ **负债/房贷建模**（净资产决策口径 + 融资购房 + 负债/刚性支出建账 + 记录购房落账）已实装并通过测试（227 单测 + 12 端到端）。剩余待实施：第三方导入。实现进度见 STATUS.md（真相源）。
+核心闭环（初始化→审批→冷静期→报表→校准→奖励→申诉/覆写→重置→对账）+ §7.2 演示干跑 + §3.1 平滑过渡计数器 + 记账自定义（§5.4 闸门入口，含模式切换/白名单增删/**冷却窗**）+ **负债/房贷建模**（净资产决策口径 + 融资购房 + 负债/刚性支出建账 + 记录购房落账）+ **§7.3 第三方导入**（CSV/手动拉取→人工核对确认→落盘；imported_pending 锁定审批、确认后 imported_confirmed）已实装并通过测试（238 单测 + 12 端到端）。实现进度见 STATUS.md（真相源）。

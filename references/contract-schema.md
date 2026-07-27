@@ -22,7 +22,7 @@ data-dir 解析：`--data-dir` > `SELFTRUST_DATA_DIR` > 默认 `<home>/.claw/sel
 | 区 | 字段 | 写权限 |
 |---|---|---|
 | 配置区（引擎只读） | version, corpus, corpus_status, liabilities, rigid_annual_expenses, monthly_contribution, safety_cushion, objectives, distribution_rules, mode, cooldown_days, cooldown_threshold, fast_track_whitelist, optimization_goal | 仅配置者；核心护栏字段（CORE_GUARD_FIELDS）须 §5.4 二次确认 |
-| 运行态区（引擎可写） | reconcile, whitelist_cap_year, appeal_count, pending_requests, rebalance_override, last_calibrate, last_report_date, report_streak, gap_streak | 引擎按既定规则更新 |
+| 运行态区（引擎可写） | reconcile, whitelist_cap_year, appeal_count, pending_requests, pending_config_changes, pending_import, rebalance_override, last_calibrate, last_report_date, report_streak, gap_streak | 引擎按既定规则更新 |
 | 配置区内嵌运行态子字段（白名单） | objectives[].lag_streak / reward_unlocked / reward_quota / status（仅 active→overdue）；fast_track_whitelist[].used_annual | 引擎可写这些子字段；其余 objectives 结构（target/deadline/weight 等）仍引擎只读 |
 | 审计区（仅追加） | approval_log, appeal_log, override_log, reward_log, monthly_history | 禁入 contract.json；只经 core/audit.py append |
 
@@ -30,7 +30,8 @@ data-dir 解析：`--data-dir` > `SELFTRUST_DATA_DIR` > 默认 `<home>/.claw/sel
 
 ## 3. 关键字段速查
 
-- `corpus_status`：manual | imported_pending（**禁审批**）| imported_confirmed（§7.3 状态机）；
+- `corpus_status`：manual | imported_pending（**禁审批**，§7.3 拉取待核对）| imported_confirmed（§7.3 核对确认后生效）；
+- `pending_import`：§7.3 导入候选暂存（RUNTIME 区），含 `source` / `candidates` / `prior_status` / `token` / `staged_at`；确认后清空、live corpus 才写入（取消则还原 prior_status，live 资产不污染）；
 - `pending_requests[].status`：cooling → withdrawn | decided | expired（终态封闭，`models.can_transition`）；
 - `objectives[].status`：active（缺省）| completed | overdue | archived（§6.4）；
 - `fast_track_whitelist[]`：{name, per_tx_cap, annual_cap, used_annual}，used_annual 属运行态语义、跨年归零（whitelist_cap_year 判定）；

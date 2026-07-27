@@ -1,5 +1,14 @@
 # CHANGELOG — self-trust
 
+## [0.7.0] - 2026-07-28
+
+### Added
+- **§7.3 第三方资产导入通道**（`modules/import_asset.py` + `cli.py import-asset` 子命令）：CSV / 手动录入拉取资产候选 → **暂存 RUNTIME 区 `pending_import`**（不立即写 live corpus）→ 人工核对确认（token 防漂移）才落到配置区的 `corpus` / `monthly_contribution` / `liabilities` / `rigid_annual_expenses`；确认后 `corpus_status` 由 `imported_pending` 切换为 `imported_confirmed`，资产池正式生效、审批解锁。
+- **数据中立硬约束**：导入待核对（`imported_pending`）锁定**一切**支取审批（judge 入口前置拦截已联动）；`--cancel --token` 放弃导入，仅还原 `corpus_status`（prior_status）并清空 staging，**live 资产原值不受污染**（避免未核实数据污染后续所有审批）；重导入场景 prior_status 正确还原（如 imported_confirmed→再导入→取消仍回 imported_confirmed）。
+- **CSV 格式**：`balances.csv`（name,balance,kind[,monthly]，kind∈asset/liability/rigid）自动汇总总资产 / 负债清单 / 刚性年支出；`flows.csv`（date,amount，可选）推算月均净流入；**可疑流水 flagging**（月净流入绝对值 > 3×中位数，提示用户核对重复/错账/币种错配）。
+- **手动录入兜底**：无 CSV 时可 `import-asset --corpus X --monthly Y --liabilities "名:余额[:月供[:年利率]]" --rigid "名:金额[:due_month]"` 直接拉取候选（代表第三方工具已核出的数字）；确认时允许 `--corpus/--monthly/--liabilities/--rigid` 修正候选。
+- 测试 227 → 238：新增 test_import_asset（CSV 解析/候选推导含可疑流水/暂存不动 live corpus/imported_pending 拦截 judge/确认落盘/确认修正/取消还原不污染/错误 token 拒）。
+
 ## [0.6.0] - 2026-07-28
 
 ### Added

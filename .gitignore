@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 测试临时产物
+.pytest_cache/
+.coverage
+htmlcov/
+*.tmp
+tmp/
+
+# 编辑器
+.idea/
+.vscode/
+
+# 本地数据（真实契约/审计数据绝不入库）
+memory/
+data/

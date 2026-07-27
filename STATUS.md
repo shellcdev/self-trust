@@ -24,12 +24,12 @@
 | 记账重置（§7.1.1） | ✅ | 见 governance |
 | 第三方导入（§7.3） | 待实施 | 首版砍掉（§8.3 取舍 #3）；imported_pending 审批拦截已实装 |
 | 模拟演示（§7.2） | ⚠️ | demo_scenarios 仍 stub（不阻塞核心闭环） |
-| SKILL.md + references + templates | ✅ | 随实装迭代 |
-| 测试 | ✅ | 165 通过：formulas / contract_guard（含运行态子字段边界）/ audit / judge / judge_full / cooldown / calibrate / report / reward / reset_appeal；另 smoke_e2e.py 端到端 12/12 |
+| SKILL.md + references + templates | ✅ | 已与实装后 CLI 真实接口对齐（命令表/参数/输出字段/全局参数脚注，2026-07-27） |
+| 测试 | ✅ | 168 通过：formulas / contract_guard（含运行态子字段边界）/ audit / judge / judge_full / cooldown / calibrate / report / reward / reset_appeal；另 smoke_e2e.py 端到端 12/12 |
 
 ## 下一步（可选，非阻塞）
 
 1. §7.2 demo_scenarios 用真实契约干跑 judge 三场景（替换 stub）
 2. §3.1 平滑过渡提示计数器（report_streak/gap_streak 更新逻辑）
 3. §7.3 第三方导入通道（imported_pending→confirmed 流程；拦截已在）
-4. SKILL.md / references 按实装后的 CLI 参数表同步措辞
+4. ~~SKILL.md / references 按实装后的 CLI 参数表同步措辞~~ ✅ 已完成（2026-07-27：SKILL.md 命令表全量重写 + approval/exceptions/report/data-modes/init/contract-schema 六份 references 对齐真实子命令与 --json 输出字段）

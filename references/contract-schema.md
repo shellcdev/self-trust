@@ -23,6 +23,7 @@ data-dir 解析：`--data-dir` > `SELFTRUST_DATA_DIR` > 默认 `<home>/.claw/sel
 |---|---|---|
 | 配置区（引擎只读） | version, corpus, corpus_status, liabilities, rigid_annual_expenses, monthly_contribution, safety_cushion, objectives, distribution_rules, mode, cooldown_days, cooldown_threshold, fast_track_whitelist, optimization_goal | 仅配置者；核心护栏字段（CORE_GUARD_FIELDS）须 §5.4 二次确认 |
 | 运行态区（引擎可写） | reconcile, whitelist_cap_year, appeal_count, pending_requests, rebalance_override, last_calibrate, last_report_date, report_streak, gap_streak | 引擎按既定规则更新 |
+| 配置区内嵌运行态子字段（白名单） | objectives[].lag_streak / reward_unlocked / reward_quota / status（仅 active→overdue）；fast_track_whitelist[].used_annual | 引擎可写这些子字段；其余 objectives 结构（target/deadline/weight 等）仍引擎只读 |
 | 审计区（仅追加） | approval_log, appeal_log, override_log, reward_log, monthly_history | 禁入 contract.json；只经 core/audit.py append |
 
 违规写入 → `GuardError`（显式报错不吞），由 `test_contract_guard.py` 全量守护（测试价值序最高）。

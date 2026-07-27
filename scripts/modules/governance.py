@@ -28,10 +28,6 @@ from modules import streaks
 APPEAL_OVERRIDE_THRESHOLD = 3   # §5.2 连续申诉驳回满 3 次开放人工覆写
 
 
-def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
-
-
 def _last_appeal_request(data_dir: Path) -> Optional[str]:
     records = audit_io.read_all(data_dir, "appeal_log")
     for rec in reversed(records):
@@ -88,7 +84,7 @@ def appeal(
 
     override_open = upheld and contract["appeal_count"] >= APPEAL_OVERRIDE_THRESHOLD
     audit_io.append(data_dir, "appeal_log", {
-        "time": _now(), "request_id": request_id, "reason": reason,
+        "time": audit_io.now_iso(today), "request_id": request_id, "reason": reason,
         "result": "维持驳回" if upheld else f"改判：{verdict['decision']['result']}",
         "appeal_count": contract["appeal_count"],
         "override_open": override_open,
@@ -175,7 +171,7 @@ def override(
     _update_pending_spend_status(contract, request_id, "approved")  # M4 台账联动
     contract_io.write_contract(data_dir, contract, actor="engine")
     audit_io.append(data_dir, "override_log", {
-        "time": _now(), "event": "manual_override",
+        "time": audit_io.now_iso(today), "event": "manual_override",
         "request_id": request_id, "amount": amount,
         "category": entry.get("category"),
         "target_impact": target_impact,
@@ -225,7 +221,7 @@ def reset_contract(
 
     # 重建留痕先落审计（先记后删，链条不断）
     audit_io.append(data_dir, "override_log", {
-        "time": _now(), "event": "contract_reset",
+        "time": audit_io.now_iso(today), "event": "contract_reset",
         "old_contract_sha256": old_hash,
         "reason": reason or "用户显式重置（§7.1.1）",
         "note": "audit 目录全部保留；旧 objective 引用在报表标注（已重置前）",
@@ -271,7 +267,7 @@ def reconcile(
 
     contract.setdefault("reconcile", {})
     contract["reconcile"]["last_reconcile"] = today.isoformat()
-    contract["reconcile"]["reminder_streak"] = 0
+    contract["reconcile"].setdefault("reminder_streak", 0)  # L10：缺省键安全赋值
     # §3.1 对账/补录属上报行为 → report_streak 更新、gap_streak 归零（先观察缺报）
     last = contract.get("last_report_date")
     observed_gap = ((today - date.fromisoformat(str(last)[:10])).days
@@ -296,7 +292,7 @@ def reconcile(
                                contract.get("rigid_annual_expenses"),
                                contract.get("monthly_contribution", 0))
         snapshot = {
-            "time": _now(), "month": today.strftime("%Y-%m"),
+            "time": audit_io.now_iso(today), "month": today.strftime("%Y-%m"),
             "income": income, "invest": invest,
             "living": living, "impulse": impulse,
             "corpus": contract.get("corpus"),

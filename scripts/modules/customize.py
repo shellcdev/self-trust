@@ -45,9 +45,12 @@ def _parse_scalar(s: str) -> Any:
     if low == "false":
         return False
     try:
-        return float(s)
+        return int(s)
     except ValueError:
-        return s
+        try:
+            return float(s)
+        except ValueError:
+            return s
 
 
 def _set_dotpath(d: dict[str, Any], path: str, value: Any) -> None:
@@ -73,7 +76,10 @@ def _parse_objective(spec: str) -> dict[str, Any]:
         "status": "active",
     }
     if len(parts) > 1 and parts[1]:
-        obj["target_amount"] = float(parts[1])
+        ta = float(parts[1])
+        if ta <= 0:
+            raise ValueError(f"目标额须为正数，得到 {parts[1]!r}（目标 {parts[0]}）")
+        obj["target_amount"] = ta
     if len(parts) > 2 and parts[2]:
         obj["deadline"] = parts[2]
     return obj
@@ -205,7 +211,7 @@ def _risk_warnings(contract: dict[str, Any], changed: dict[str, Any]) -> list[st
 
 def _eff_cushion(sc: dict[str, Any], lb: float, net: float) -> float:
     """按安全垫配置算有效安全垫（与 F.f1_effective_cushion 同口径，避免新增依赖）。"""
-    mode = sc.get("mode", "months")
+    mode = (sc.get("mode", "months") or "").strip().lower()  # L5 大小写不敏感
     if mode == "months":
         return float(lb) * float(sc.get("months", 6))
     if mode == "fixed":
@@ -328,6 +334,12 @@ def _apply_changes(contract: dict[str, Any], changes: dict[str, Any]):
 
     hp = changes.get("record_home_purchase")
     if hp:
+        # M4：首付不得超当前资金池，否则 corpus 变负污染后续所有判定（F0 净资产/
+        # F1 安全垫收敛），须在落账前显式拒绝而非静默转负。
+        if float(new.get("corpus", 0)) < hp["down_payment"]:
+            raise ValueError(
+                f"记录购房失败：当前资金池 {new.get('corpus')} 不足以支付首付 "
+                f"{hp['down_payment']:.2f}（首付须 ≤ 资金池；缺口请降低首付比例或先攒池）")
         # 首付（打 liquid）→ corpus 减；融资部分 → 变负债（含月供）
         new["corpus"] = float(new.get("corpus", 0)) - hp["down_payment"]
         liabs = new.setdefault("liabilities", [])
@@ -465,7 +477,7 @@ def apply(data_dir: Path, changes: dict[str, Any], *, confirm: bool,
     expected = _token(changes, _contract_sha(contract))
     if not confirm:
         return preview(data_dir, changes)
-    if token != expected:
+    if not secrets.compare_digest(str(token or ""), str(expected)):
         return {
             "ok": False, "error": "stale_token",
             "message": "确认 token 不匹配或契约已变更，请重新预览（customize 不带 --confirm）再确认",
@@ -575,14 +587,24 @@ def sweep_pending_config(data_dir: Path, *, now: datetime | None = None) -> dict
         return {"ok": True, "applied": [], "pending_count": len(keep)}
 
     work = copy.deepcopy(contract)
+    failed: list[dict[str, Any]] = []
     for e in expired:
-        work, _ = _apply_changes(work, e["changes"])
-        e["status"] = "applied"
-    # M5：到期自动生效的条目已从待决队列移除（历史沉淀在 override_log），
-    # 仅保留窗内 pending 项，避免 pending_config_changes 无限堆积脏数据。
-    work["pending_config_changes"] = keep
+        try:
+            work, _ = _apply_changes(work, e["changes"])
+            e["status"] = "applied"
+        except Exception as ex:
+            # M3：单条过期修改应用失败（如字段已不存在）→ 标记 failed 不阻塞其余，
+            # 不把契约写成脏状态；failed 项保留在 pending_config_changes 供排查，
+            # 下次扫描不再误当作 pending 重跑（status≠pending）。
+            e["status"] = "failed"
+            e["error"] = str(ex)
+            failed.append({"request_id": e["request_id"], "error": str(ex)})
+    # M5：到期自动生效的条目（status=applied）从待决队列移除；failed 项保留。
+    work["pending_config_changes"] = [e for e in pcc if e["status"] != "applied"]
     contract_io.write_contract(data_dir, work, actor="configurator", confirm=True)
     for e in expired:
+        if e["status"] != "applied":
+            continue
         audit_io.append(data_dir, "override_log", {
             "time": _now(), "event": "contract_customize_cooled",
             "request_id": e["request_id"],
@@ -591,8 +613,8 @@ def sweep_pending_config(data_dir: Path, *, now: datetime | None = None) -> dict
             "risk_warnings": e["preview"]["risk_warnings"],
             "reason": "冷却窗到期自动生效（§5.4）",
         })
-    return {"ok": True, "applied": [e["request_id"] for e in expired],
-            "pending_count": len(keep)}
+    return {"ok": True, "applied": [e["request_id"] for e in expired if e["status"] == "applied"],
+            "failed": failed, "pending_count": len(keep)}
 
 
 def review_config(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:

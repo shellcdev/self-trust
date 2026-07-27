@@ -43,13 +43,14 @@ class TestAppendOnly:
     def test_missing_file_reads_empty(self, tmp_data_dir):
         assert audit.read_all(tmp_data_dir, "reward_log") == []
 
-    def test_corrupt_line_raises_explicitly(self, tmp_data_dir):
-        """引擎错误显式返回不吞错（规范 #8）。"""
+    def test_corrupt_line_skipped_tolerantly(self, tmp_data_dir):
+        """L9：损坏行（如崩溃时的半截写入）跳过而非抛错，避免前序已读记录全部丢失。"""
         path = audit.log_path(tmp_data_dir, "appeal_log")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('{"ok": 1}\n{broken json\n', encoding="utf-8")
-        with pytest.raises(ValueError, match="损坏"):
-            audit.read_all(tmp_data_dir, "appeal_log")
+        recs = audit.read_all(tmp_data_dir, "appeal_log")  # 不抛错
+        assert len(recs) == 1
+        assert recs[0]["ok"] == 1
 
 
 class TestF8Snapshot:

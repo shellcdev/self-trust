@@ -1,5 +1,29 @@
 # CHANGELOG — self-trust
 
+## [0.7.9] - 2026-07-28
+
+### Fixed（第二份扫描报告中等 M1–M9 / 轻微 L1–L11 修复，来源 `Loomy/self-trust-硬伤扫描报告.md`）
+- **M1 审计时间对齐逻辑 today**：新增 `audit.now_iso(today)`，所有审计落盘（`submit`/`withdraw`/`finalize`/`expire` 的 F8/反向记录、`preview`/`apply`/`sweep`/`reconcile`/`reset`/`appeal`/`override`/`claim`/`run_report` 快照）统一用 `datetime.combine(today, datetime.now().time())`，重放场景（`--today`）审计链可复现，不再用真实墙钟导致链条断裂。
+- **M2 expire 原子性**：`judge.expire` 先收集全部 `expired_ruling` 审计记录 → 一次性落盘契约（状态迁移）→ 再批量写审计；契约已一致，单条审计追加失败也不会让 request 回退重处理（修复前循环内逐条 append，中途失败会重复处理）。
+- **M3 sweep 单条失败隔离**：`customize.sweep_pending_config` 逐条 `_apply_changes`，单条应用失败（如字段已不存在）→ 标记 `failed` 保留在 `pending_config_changes` 供排查、不阻塞其余、不写脏契约；到期生效的 `applied` 项移除。
+- **M4 购房首付不超额**：`customize._apply_changes` 的 `record_home_purchase` 在 `corpus < down_payment` 时显式 `raise ValueError`（首付须 ≤ 资金池），不再静默转负污染 F0/F1 后续所有判定；并记运行时 `pending_spends` 台账（引擎可写、不碰配置区 corpus，台账由 reconcile 并入清空）。
+- **M5 archived 语义澄清**：`calibrate.transition_objective` archived 注释明确「current_amount 为资金池内标记额度，corpus 不变、资金不消失」（验证过 current_amount 从未加入 corpus，故无「资金消失」，仅解除标记语义）。
+- **M6 报表字段名统一**：`report._objective_view` 只暴露 `achieved_ratio`（current/target），删除重复的 `achieve_ratio`（同值仅差一字母），避免 LLM 渲染引用错字段。
+- **M7 审计并发文件锁**：`audit._locked_append` 加跨平台文件锁（Windows `msvcrt.locking` / Unix `fcntl.flock`）整文件排他，退化优雅（锁不可用时无锁追加，单进程安全）；`audit.append` 经它落盘，避免多进程写 jsonl 行交错损坏。
+- **M8 导入同账户去重改 last-wins**：`import_asset._dedup_balances` 同 `(name,kind)` 余额不同→取**最新出现值覆盖并告警**（不再求和，求和会让同账户余额翻倍污染 corpus；完全重复行仍静默丢弃）。注：此决策覆盖早期 `[0.7.6] H1` 的「求和并告警」口径。
+- **M9 token 恒定时间比较**：`customize.apply` 与 `import_asset._get_staging` 的 token 比对改用 `secrets.compare_digest`（防时序攻击推断 token）。
+- **L1 零期限月供**：`judge.estimate_mortgage_monthly` 期限 `n<=0` 返回 `0.0`（一次性付清，不再返回全额本金）。
+- **L3 目标额须为正**：`cli._parse_objective` 与 `customize._parse_objective` 在 `target_amount<=0` 时 `raise ValueError`（负值会让 f4_lag 达成率变负、语义错乱）。
+- **L4 int 保真**：`customize._parse_scalar` 先 `int(s)` 再 `float(s)`（`--set x=3` → int 3 而非 3.0，JSON 序列化 `3` 与 models `int` 一致）。
+- **L5 安全垫模式大小写不敏感**：`formulas.f1_effective_cushion` 与 `customize._eff_cushion` 对 `mode` 先 `.strip().lower()`（`Months`→`months` 不再抛错）。
+- **L6 deadline 日期对象比较**：`initialize.lazy_init` 解析 `date.fromisoformat(...[:10])` 比较日期对象（非字典序，杜绝 `2036-1-10 < 2036-1-9` 误判），格式非法→拒绝该目标。
+- **L7 收入基线用中位数**：`calibrate.calibrate` 在 `monthly_contribution<=0 且 len(series)>=3` 时基线收入改近 3 月**中位数**（不再均值），一次性大额异常不再拉高基线、误判收入下跌。
+- **L9 损坏行容忍**：`audit.read_all` 遇 `json.JSONDecodeError` 跳过该行（仅追加日志健壮性优先），不丢失前序已读记录（修复前抛错致全部记录不可读）。
+- **L10 reminder_streak 缺省键**：`governance.reconcile` 对 `reconcile` 用 `setdefault("reminder_streak", 0)`，旧契约缺键不 KeyError。
+- **L11 CLI 解析器本地化**：`cli.py` 不再从 `modules.customize` 导入 `_parse_liability`/`_parse_rigid`，改为本地重实现（解耦私有符号，重构 customize 不脆断）；`_parse_objective` 同样本地化且带 L3 正数校验。
+- **L2 / L8 评估后有意不改**：L2（`debt_service_ok` 当 `monthly_net<=0 且 mortgage_monthly<=0` 分支）经核实该分支实际不可达（有贷款必有 `mortgage_monthly>0`），维持现状；L8（`_set_dotpath` 覆盖非 dict 中间节点）在自定义场景下可接受，暂不加警告（留待后续如需更严格校验再补）。
+- 新增回归测试 `scripts/tests/test_ml_regressions.py`（26 例，覆盖 M1/M2/M3/M6/M7/M8/M9/L1/L3/L4/L5/L6/L7/L9/L10/L11），测试 285 → 312，全绿。
+
 ## [0.7.8] - 2026-07-28
 
 ### Fixed（第二轮硬伤扫描 H1–H7 严重项修复，来源 `Loomy/self-trust-硬伤扫描报告.md`）

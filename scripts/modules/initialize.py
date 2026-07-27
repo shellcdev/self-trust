@@ -56,11 +56,20 @@ def lazy_init(
 
     for obj in objectives:
         deadline = obj.get("deadline")
-        # 护栏 3：deadline 必须晚于 start_date（当日）；None 允许（无期限目标）
-        if deadline is not None and str(deadline) <= today_iso:
-            rejected.append({"name": obj.get("name"), "reason":
-                             f"deadline {deadline} 不晚于当日 {today_iso}，不生成负周期"})
-            continue
+        # 护栏 3：deadline 必须晚于 start_date（当日）；None 允许（无期限目标）。
+        # L6：按日期对象比较（非字符串），避免 "2036-1-10" < "2036-1-9" 这类字典序误判；
+        # 格式非法（非 YYYY-MM-DD）视为无效 deadline 直接拒绝。
+        if deadline is not None:
+            try:
+                dl = date.fromisoformat(str(deadline)[:10])
+            except ValueError:
+                rejected.append({"name": obj.get("name"), "reason":
+                                f"deadline {deadline} 格式非法（须 YYYY-MM-DD）"})
+                continue
+            if dl <= today:
+                rejected.append({"name": obj.get("name"), "reason":
+                                f"deadline {deadline} 不晚于当日 {today_iso}，不生成负周期"})
+                continue
         accepted.append(obj)
 
     if not accepted:

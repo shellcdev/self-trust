@@ -107,7 +107,7 @@ def claim_reward(
     obj["reward_quota"] = quota - amount
     contract_io.write_contract(data_dir, contract, actor="engine")
     audit_io.append(data_dir, "reward_log", {
-        "time": datetime.now().isoformat(timespec="seconds"),
+        "time": audit_io.now_iso(today),   # M1：审计时间对齐逻辑 today
         "event": "claimed", "obj": objective,
         "amount": float(amount), "purpose": purpose,
         "quota_remaining": obj["reward_quota"],

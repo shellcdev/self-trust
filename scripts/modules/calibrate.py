@@ -153,7 +153,11 @@ def calibrate(
     series = _income_series(history or [])
     baseline_income = float(contract.get("monthly_contribution", 0) or 0)
     if baseline_income <= 0 and len(series) >= 3:
-        baseline_income = sum(v for _, v in series[-3:]) / 3.0
+        # L7：近 3 月均值易被执行收入（一次性大额）拉高 → 改用中位数更稳健
+        vals = sorted(v for _, v in series[-3:])
+        n = len(vals)
+        baseline_income = (vals[n // 2] if n % 2
+                           else (vals[n // 2 - 1] + vals[n // 2]) / 2.0)
     income_drop = False
     income_recovered = False
     if baseline_income > 0 and len(series) >= 2:
@@ -298,7 +302,8 @@ def transition_objective(
         "objective": name,
         "from": prev,
         "released_weight": obj.get("weight"),
-        "note": ("current_amount 归还资金池自由层（corpus 不变，仅解除锁定语义）"
+        "note": ("current_amount 为资金池内的标记额度，资金始终在 corpus 自由层"
+                 "（archived 仅解除标记语义，corpus 不变，资金不消失）"
                  if dst == "archived" else "达成收尾，奖励逻辑照常（§6.3）"),
     })
     return {"ok": True, "objective": name, "from": prev, "to": dst,

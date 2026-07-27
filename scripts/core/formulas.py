@@ -72,6 +72,7 @@ def f1_effective_cushion(
     >>> f1_effective_cushion("ratio", living_baseline=5000, ratio=0.2, net_assets=-600000)
     0.0
     """
+    mode = (mode or "").strip().lower()  # L5：模式名大小写不敏感（Months→months）
     if mode == "months":
         return float(living_baseline) * float(months)
     if mode == "fixed":

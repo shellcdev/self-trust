@@ -154,6 +154,11 @@ def test_financed_cooldown_uses_down_payment(tmp_data_dir, base_contract):
 # ============================================================ B2 购房落账
 def test_record_home_purchase_persists(tmp_data_dir, base_contract):
     """--record-home-purchase 1000000:0.3 → corpus-=30万 + 房贷负债 70万(月供~3341.91)。"""
+    # 资金池设足（M4：首付须 ≤ 资金池），聚焦落账正确性
+    c0 = contract_io.read_contract(tmp_data_dir)
+    c0["corpus"] = 1_000_000
+    contract_io.write_contract(tmp_data_dir, c0, actor="configurator", confirm=True)
+
     args = types.SimpleNamespace(
         set=None, add_objective=None, whitelist_add=None, per_tx_cap=None,
         annual_cap=None, whitelist_remove=None, add_liability=None,
@@ -170,8 +175,7 @@ def test_record_home_purchase_persists(tmp_data_dir, base_contract):
                    reason="记录购房")
     assert res["ok"] and res["applied"]
     c = contract_io.read_contract(tmp_data_dir)
-    # base_contract corpus=200000 → 200000-300000 = -100000（仅验证算术落账）
-    assert c["corpus"] == -100000.0
+    assert c["corpus"] == 700000.0   # 1,000,000 - 300,000（M4：首付不得超资金池）
     assert any(l["name"] == "房贷" and l["balance"] == 700000
                and abs(l["monthly_payment"] - 3341.91) < 1.0
                for l in c["liabilities"])

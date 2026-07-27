@@ -49,7 +49,7 @@ def estimate_mortgage_monthly(principal: float, term_years: float,
     n = int(round(float(term_years) * 12))
     p = float(principal)
     if n <= 0:
-        return p  # 退化：无期限视作一次性
+        return 0.0  # L1：无期限（0 年）视作一次性付清，无月供（不再返回全额本金）
     r = float(annual_rate) / 12.0
     if r == 0:
         return p / n
@@ -326,12 +326,13 @@ def _find_request(contract: dict[str, Any], request_id: str) -> dict[str, Any] |
 
 def _record_pending_spend(contract: dict[str, Any], request_id: str,
                           result: dict[str, Any], amount: float, category: str,
-                          planned: bool, financed_amount: float, status: str) -> None:
+                          planned: bool, financed_amount: float, status: str,
+                          today: date | None = None) -> None:
     """M4：把审批通过的支出记入运行时台账 pending_spends（引擎可写，不碰配置区 corpus）。
     仅记录实际现金流出，供 reconcile 对账时并入并清空，消除「审批不自动扣 corpus」的静默坑。"""
     contract.setdefault("pending_spends", []).append({
         "request_id": request_id,
-        "time": datetime.now().isoformat(timespec="seconds"),
+        "time": audit_io.now_iso(today),   # M1：审计时间对齐逻辑 today
         "amount": float(amount),
         "actual_cash_out": float(result["inputs"].get("actual_cash_out", amount)),
         "category": category,
@@ -406,7 +407,8 @@ def submit(
         request_id = uuid.uuid4().hex[:12]
         _record_pending_spend(
             contract, request_id, result, amount, category, planned,
-            financed_amount, status="cooling" if cooldown_triggered else "approved")
+            financed_amount, status="cooling" if cooldown_triggered else "approved",
+            today=today)
         changed = True
 
     if cooldown_triggered:
@@ -447,7 +449,7 @@ def submit(
 
     # F8 完整中间变量快照（§10.1，复盘验算）
     audit_io.append_approval_snapshot(data_dir, {
-        "time": datetime.now().isoformat(timespec="seconds"),
+        "time": audit_io.now_iso(today),   # M1：审计时间对齐逻辑 today
         "amount": float(amount),
         "category": category,
         "scene": result["decision"]["scene"],
@@ -532,7 +534,7 @@ def withdraw(data_dir: Path, request_id: str,
     }
     # 审计：追加反向记录（不抹原记录，§10.1）
     audit_io.append(data_dir, "approval_log", {
-        "time": datetime.now().isoformat(timespec="seconds"),
+        "time": audit_io.now_iso(today),   # M1
         "event": "withdrawn",
         "request_id": request_id,
         "amount": amount,
@@ -560,7 +562,7 @@ def finalize(data_dir: Path, request_id: str,
     contract_io.write_contract(data_dir, contract, actor="engine")
     decision = entry.get("decision", {})
     audit_io.append(data_dir, "approval_log", {
-        "time": datetime.now().isoformat(timespec="seconds"),
+        "time": audit_io.now_iso(today),   # M1
         "event": "finalized",
         "request_id": request_id,
         "amount": entry.get("amount"),
@@ -581,6 +583,7 @@ def expire(data_dir: Path, request_id: str | None = None,
     today = today or date.today()
     contract = contract_io.read_contract(data_dir)
     processed: list[dict[str, Any]] = []
+    audit_records: list[dict[str, Any]] = []
     now = datetime.combine(today, datetime.max.time())
     for entry in contract.get("pending_requests", []):
         if request_id and entry.get("request_id") != request_id:
@@ -605,16 +608,20 @@ def expire(data_dir: Path, request_id: str | None = None,
         processed.append({"request_id": entry["request_id"],
                           "final_status": dst.value,
                           "decision": entry.get("decision")})
-        audit_io.append(data_dir, "approval_log", {
-            "time": datetime.now().isoformat(timespec="seconds"),
+        audit_records.append({
+            "time": audit_io.now_iso(today),   # M1
             "event": "expired_ruling",
             "request_id": entry["request_id"],
             "amount": entry.get("amount"),
             "final_status": dst.value,
             "decision": entry.get("decision"),
         })
+    # M2：先落盘契约（状态迁移一次性原子），再批量写审计；契约已一致，
+    # 即便某条审计追加失败也不会让 request 状态回退重处理。
     if processed:
         contract_io.write_contract(data_dir, contract, actor="engine")
+        for rec in audit_records:
+            audit_io.append(data_dir, "approval_log", rec)
     if request_id and not processed:
         return {"ok": False, "error": "request_not_found",
                 "message": f"未找到可到期终裁的申请 {request_id}"}

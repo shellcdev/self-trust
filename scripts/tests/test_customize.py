@@ -12,6 +12,8 @@
 """
 from __future__ import annotations
 
+import pytest
+
 from core import audit as audit_io
 from core import contract as contract_io
 from modules import customize as mod_customize
@@ -246,6 +248,7 @@ def _changes_for_home_purchase(spec: str) -> dict:
 def test_record_home_purchase_appends_once_when_absent(tmp_data_dir, base_contract):
     # 全新契约（无房贷）→ 记录一次，恰好一条「房贷」
     before = contract_io.read_contract(tmp_data_dir)
+    before["corpus"] = 1_000_000   # 足够首付（M4 校验），聚焦去重逻辑
     changes = _changes_for_home_purchase("1000000:0.3")
     new, touched = mod_customize._apply_changes(dict(before), changes)
     assert sum(1 for x in new["liabilities"] if x["name"] == "房贷") == 1
@@ -256,6 +259,7 @@ def test_record_home_purchase_appends_once_when_absent(tmp_data_dir, base_contra
 def test_record_home_purchase_dedups_existing_mortgage(tmp_data_dir, base_contract):
     # 已存在手动「房贷」负债 → 再次记录应更新而非追加（修复前会翻倍）
     before = contract_io.read_contract(tmp_data_dir)
+    before["corpus"] = 1_000_000
     before["liabilities"] = [{"name": "房贷", "balance": 300000,
                               "monthly_payment": 1500.0, "annual_rate": 0.05}]
     changes = _changes_for_home_purchase("1000000:0.3")       # 融资 700k / 首付 300k
@@ -269,10 +273,20 @@ def test_record_home_purchase_dedups_existing_mortgage(tmp_data_dir, base_contra
 def test_record_home_purchase_twice_does_not_double(tmp_data_dir, base_contract):
     # 连续两次记录（重跑修正）→ 仍只有一条「房贷」，corpus 仅扣一次首付
     before = contract_io.read_contract(tmp_data_dir)
+    before["corpus"] = 1_000_000
     c1, _ = mod_customize._apply_changes(dict(before), _changes_for_home_purchase("1000000:0.3"))
     c2, _ = mod_customize._apply_changes(dict(c1), _changes_for_home_purchase("2000000:0.3"))
     mortgages = [x for x in c2["liabilities"] if x["name"] == "房贷"]
     assert len(mortgages) == 1
     assert mortgages[0]["balance"] == 1400000                 # 第二次融资额覆盖
     assert c2["corpus"] == before["corpus"] - 300000 - 600000  # 两次首付各扣一次
+
+
+def test_record_home_purchase_rejects_insufficient_corpus(tmp_data_dir, base_contract):
+    # M4：首付 > 资金池 → 显式拒绝（corpus 不得变负污染后续判定），而非静默转负
+    before = contract_io.read_contract(tmp_data_dir)
+    before["corpus"] = 200_000
+    changes = _changes_for_home_purchase("1000000:0.3")       # 首付 30 万 > 20 万
+    with pytest.raises(ValueError, match="不足以支付首付"):
+        mod_customize._apply_changes(dict(before), changes)
 

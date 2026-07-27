@@ -35,7 +35,6 @@ from modules import judge as mod_judge       # noqa: E402
 from modules import report as mod_report     # noqa: E402
 from modules import reward as mod_reward     # noqa: E402
 from modules import import_asset as mod_import  # noqa: E402
-from modules.customize import _parse_liability, _parse_rigid  # noqa: E402
 
 
 def _emit(payload: dict, code: int = 0) -> int:
@@ -51,10 +50,39 @@ def _parse_objective(spec: str) -> dict:
     parts = spec.split(":")
     obj: dict = {"name": parts[0]}
     if len(parts) > 1 and parts[1]:
-        obj["target_amount"] = float(parts[1])
+        ta = float(parts[1])
+        if ta <= 0:   # L3：目标额须为正，负值会让 f4_lag 达成率变负、语义错乱
+            raise ValueError(f"目标额须为正数，得到 {parts[1]!r}（目标 {parts[0]}）")
+        obj["target_amount"] = ta
     if len(parts) > 2 and parts[2]:
         obj["deadline"] = parts[2]
     return obj
+
+
+def _parse_liability(spec: str) -> dict:
+    """解析 负债 名称:余额[:月供[:年利率]]（L11：本地实现，解耦 customize 私有导入）。"""
+    parts = spec.split(":")
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        raise ValueError("--add-liability 格式应为 名称:余额[:月供[:年利率]]")
+    return {
+        "name": parts[0],
+        "balance": float(parts[1]),
+        "monthly_payment": float(parts[2]) if len(parts) > 2 and parts[2] else 0.0,
+        "annual_rate": float(parts[3]) if len(parts) > 3 and parts[3] else 0.0,
+    }
+
+
+def _parse_rigid(spec: str) -> dict:
+    """解析 刚性年支出 名称:金额[:due_month]（L11：本地实现，解耦 customize 私有导入）。"""
+    parts = spec.split(":")
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        raise ValueError("--add-rigid 格式应为 名称:金额[:due_month]")
+    return {
+        "name": parts[0],
+        "amount": float(parts[1]),
+        "due_month": int(parts[2]) if len(parts) > 2 and parts[2] else None,
+    }
+
 
 
 def _today(args) -> date | None:

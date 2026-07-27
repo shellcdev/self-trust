@@ -226,13 +226,13 @@ def test_duplicate_liability_rows_deduped():
 
 
 def test_same_name_diff_balance_merges_with_warning():
-    # 同账户余额不同 → 求和（不丢钱、不双倍）+ 告警交由人工核对
+    # 同账户余额不同 → 取「最新出现值」覆盖（不再求和翻倍）+ 告警交由人工核对（M8）
     rows = [
         {"name": "招行", "balance": 500000, "kind": "asset", "monthly": 0},
         {"name": "招行", "balance": 200000, "kind": "asset", "monthly": 0},
     ]
     c = mod.compute_candidates(rows)
-    assert c["corpus"] == 700000
+    assert c["corpus"] == 200000   # 后出现者覆盖（最新快照），不再 500k+200k 翻倍
     assert any(w["name"] == "招行" for w in c["warnings"])
 
 

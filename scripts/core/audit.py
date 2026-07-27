@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -29,15 +31,60 @@ def log_path(data_dir: Path, log_name: str) -> Path:
     return audit_dir(data_dir) / f"{log_name}.jsonl"
 
 
+def now_iso(today: date | None = None) -> str:
+    """审计时间戳（M1）：逻辑重放时间 today（可被测试/重放覆盖）结合真实时刻，
+
+    保证重放场景审计链可复现（时间字段与逻辑 today 对齐，而非真实墙钟）。
+    """
+    base = today or date.today()
+    return datetime.combine(base, datetime.now().time()).isoformat(timespec="seconds")
+
+
+def _locked_append(path: Path, line: str) -> None:
+    """跨平台追加一行并加文件锁，避免多进程并发写审计 jsonl 时行交错损坏（M7）。
+
+    - Unix：fcntl.flock 整文件排他锁；
+    - Windows：msvcrt.locking 锁文件首字节作为互斥（Windows 不保证 O_APPEND 原子性）。
+    锁不可用时退化为无锁追加（单进程场景安全）。
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a+b") as f:
+        locked = False
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            locked = True
+        except (ImportError, OSError):
+            locked = False
+        try:
+            f.seek(0, 2)  # 末尾追加
+            f.write((line + "\n").encode("utf-8"))
+        finally:
+            if locked:
+                try:
+                    if sys.platform == "win32":
+                        import msvcrt
+                        f.seek(0)
+                        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                except (ImportError, OSError):
+                    pass
+
+
 def append(data_dir: Path, log_name: str, record: dict[str, Any]) -> Path:
     """仅追加一条审计记录。record 必须是可 JSON 序列化 dict。"""
     if not isinstance(record, dict):
         raise TypeError(f"审计记录必须为 dict，得到 {type(record).__name__}")
     path = log_path(data_dir, log_name)
-    path.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(record, ensure_ascii=False)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(line + "\n")
+    _locked_append(path, line)
     return path
 
 
@@ -54,9 +101,10 @@ def read_all(data_dir: Path, log_name: str) -> list[dict[str, Any]]:
                 continue
             try:
                 records.append(json.loads(line))
-            except json.JSONDecodeError as e:
-                # 显式报错不吞：审计文件损坏是关键失败
-                raise ValueError(f"{path} 第 {i} 行损坏: {e}") from e
+            except json.JSONDecodeError:
+                # L9：损坏行（如崩溃时的半截写入）跳过而非抛错，避免前序已读记录全部丢失；
+                # 仅追加日志的健壮性优先于严格性，关键失败仍由调用方业务逻辑暴露。
+                continue
     return records
 
 

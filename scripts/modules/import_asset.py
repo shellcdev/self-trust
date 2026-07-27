@@ -24,6 +24,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import secrets
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -151,7 +152,8 @@ def _dedup_balances(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
     """按 (name, kind) 去重合并，防止同一账户在 CSV/手动录入中重复列出导致资产/负债双倍计入。
 
     - 完全重复行（name/balance/kind/monthly 全同）= 同账户重复导出 → 丢弃多余副本。
-    - 同 name+kind 但余额/月供不同 = 歧义（可能漏列/错列）→ 求和并告警，不静默丢弃。
+    - 同 name+kind 但余额/月供不同 = 歧义（可能错列/重复导出）→ 取「文件中后出现者」
+      （最新快照）覆盖并告警，不静默丢弃、也不求和（求和会让同账户余额翻倍，污染 corpus）。
     """
     warnings: list[dict[str, Any]] = []
     seen: dict[tuple[str, str], int] = {}  # (name, kind) -> index in merged
@@ -168,13 +170,14 @@ def _dedup_balances(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
         if (_money_close(prev["balance"], r["balance"])
                 and _money_close(prev["monthly"], r["monthly"])):
             continue  # 完全重复 → 丢弃副本（修复 H1：不再双倍计入）
-        # 同账户余额不同 → 求和（保守不丢钱）+ 告警，交由人工核对
-        prev["balance"] = prev["balance"] + r["balance"]
-        prev["monthly"] = prev["monthly"] + r["monthly"]
+        # M8：同账户余额不同 → 视为重复导出/错账，取最新出现值覆盖并告警，
+        # 不再求和（求和会让同一账户余额翻倍，污染 corpus/负债）。
+        prev["balance"] = r["balance"]
+        prev["monthly"] = r["monthly"]
         warnings.append({
             "name": r["name"], "kind": r["kind"],
             "reason": (f"「{r['name']}」({r['kind']}) 出现多次且余额/月供不一致，"
-                       "已按同账户求和合并，请核对是否为错账或重复导出"),
+                       "已按最新出现值覆盖合并，请核对是否为错账或重复导出"),
         })
     return merged, warnings
 
@@ -301,7 +304,9 @@ def stage_import(contract: dict[str, Any], candidates: dict[str, Any],
 
 def _get_staging(contract: dict[str, Any], token: str) -> tuple[Optional[dict[str, Any]], Optional[str]]:
     staging = contract.get("pending_import")
-    if not staging or staging.get("token") != token:
+    # M9：恒定时间比较，防时序攻击推断 token（secrets.compare_digest）
+    if not staging or not secrets.compare_digest(
+            str(staging.get("token") or ""), str(token or "")):
         return None, "bad_token"
     return staging, None
 

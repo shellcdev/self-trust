@@ -58,8 +58,8 @@ def _objective_view(o: dict[str, Any], today: date) -> dict[str, Any]:
         "achieved_ratio": (current / float(target)) if target else None,
         "lag": None, "time_progress": None, "color": None,
     }
-    reward = F.f6_reward(current, target, bool(o.get("reward_unlocked")))
-    view["achieve_ratio"] = reward["achieve_ratio"]
+    # M6：achieved_ratio 已是 current/target（与 F6 的 achieve_ratio 同值，仅名字差一字母），
+    # 不再重复挂 achieve_ratio 字段，避免 LLM 渲染引用错字段名。
     view["reward_quota"] = float(o.get("reward_quota", 0) or 0)
     if info is None:
         # 无 deadline 目标：仅展示攒钱占比（F4 守卫）
@@ -76,7 +76,7 @@ def _objective_view(o: dict[str, Any], today: date) -> dict[str, Any]:
         marks.append("⚠️超期")
     if view["reward_quota"] > 0:
         marks.append(f"🏆已解锁奖励 ¥{view['reward_quota']:,.0f}")
-    elif view["achieve_ratio"] and view["achieve_ratio"] >= 1.0:
+    elif view["achieved_ratio"] and view["achieved_ratio"] >= 1.0:
         marks.append("🎉已达成")
     suffix = (" " + " ".join(marks)) if marks else ""
     view["ascii"] = (
@@ -178,7 +178,7 @@ def run_report(data_dir: Path, *, today: date | None = None) -> dict[str, Any]:
     already = any(str(r.get("month")) == this_month for r in history)
     if not already:
         snapshot = {
-            "time": datetime.now().isoformat(timespec="seconds"),
+            "time": audit_io.now_iso(today),   # M1：审计时间对齐逻辑 today
             "month": this_month,
             "income": None,   # 实际注入实绩由对账/上报补录（§6.2 口径），不虚构
             "invest": None,

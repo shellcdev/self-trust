@@ -1,15 +1,15 @@
 ---
 title: "个人自律记账框架（Self-Trust）设计"
 summary: "个人自律记账/预算辅助工具（非法律信托）：配置者/规则引擎/未来的你同一人，规则引擎按既定数学规则约束当下随意支配；数据走混合开关。先文档后skill。"
-version: "v1.0"
+version: "v1.1"
 status: active
 related:
   - docs/specs/WRITE-SPEC.md
   - docs/specs/SKILL-REGISTRY.md
-updated: 2026-07-27
+updated: 2026-07-28
 ---
 
-> 设计已定稿（v1.0，全部待确认项关闭），可据此建 skill。
+> v1.0 设计已定稿（全部待确认项关闭），可据此建 skill。**v1.1（2026-07-28）增补三项落地增强，设计哲学不变**：① 静态加密（数据静态加密 at rest，opt-in 默认关）② 多币种 Level A+B（CNY 透传 + USD 换算）③ 落盘健壮性三层加固（读守卫 / 写前校验 / 唯一临时名）。详见 §2 / §8.2 / §10.4 / §10.5。
 
 **目录**
 - §0 一句话定义（含性质声明）
@@ -22,7 +22,7 @@ updated: 2026-07-27
 - §7 优化目标三档开关 ｜ §7.1 懒人初始化 ｜ §7.2 模拟演示 ｜ §7.3 第三方导入 ｜ §7.4 生活费基线
 - §8 skill 实现计划（§8.1 当前版本 / §8.2 长期扩展 / §8.3 骨架与落地取舍）
 - §9 完整交互命令体系
-- §10 风险防控与数据安全（审计/兜底/三区权限/本地隔离）
+- §10 风险防控与数据安全（审计/兜底/三区权限/本地隔离/静态加密）
 - §11 AI 规则引擎公正性保障体系
 - 设计定稿与落地引导
 
@@ -64,6 +64,7 @@ updated: 2026-07-27
 ```json
 {
   "version": "0.1",
+  "currency": "CNY",                 // 资金池币种（多币种 Level A+B，[0.7.13]）；CNY 透传，USD 等按实时/录入汇率折算为 CNY 测算；默认 CNY
   "corpus": 0,                       // 资金池余额（资产侧，单位：元；可由 §7.3 第三方导入，需人工核对）
   "corpus_status": "manual",        // manual | imported_pending | imported_confirmed（§7.3 状态机）
   "liabilities": [],                // 负债清单（新增）：[{ "name":"房贷","balance":800000,"monthly_payment":5000,"annual_rate":0.04 }]
@@ -94,6 +95,13 @@ updated: 2026-07-27
     "allowed_categories": ["食品","居住","交通","通讯","医疗","教育","服饰","日用","合理享受","娱乐","旅行","社交","宠物","数码家电","保险","房产","车辆","投资","理财","基金","股票","黄金","其他"]
   },
   "mode": "hybrid",                  // 数据模式开关：ledger | conversational | hybrid
+  "crypto": {                        // 静态加密配置（[0.7.14]，opt-in 默认关）：数据静态加密落盘
+    "enabled": false,                // 是否启用静态加密（init --encrypt 开启，默认关）
+    "mode": "passphrase",            // passphrase | keyfile 两种密钥路线（初始化时一次性决定）
+    "kdf": "pbkdf2",                 // passphrase 派生算法：PBKDF2-HMAC-SHA256（20 万轮）
+    "iterations": 200000,
+    "key_file": null                 // keyfile 模式下的密钥文件路径（启用时自动生成，权限 600）
+  },
   "reconcile": {                     // hybrid 定期自动对账（新增，见 §3.2）
     "enabled": true,                // hybrid 模式下默认开启
     "period_days": 30,              // 对账周期（自然日），默认 30
@@ -758,7 +766,7 @@ approval_log 每笔记录须含：
 
 | 扩展方向 | 预留方式 |
 |---|---|
-| 多币种支持（注：复利测算已随公式 3.5/7 落地，不再属扩展项） | `corpus` 预留 `currency` 字段位；`monthly_history` 预留收益列 |
+| 多币种支持（Level A+B，[0.7.13] 已落地） | `corpus` 增 `currency` 字段（默认 CNY）；judge / 冷静期 / 审计快照落币种信息；CNY 透传、USD 等按汇率折算为 CNY 测算；`monthly_history` 预留收益列 |
 | 多账户资产合并归集 | `corpus` 预留 `accounts[]` 聚合结构；导入（§7.3）预留多源合并入口 |
 | 150% / 200% 梯度里程碑奖励 | §6.3 奖励逻辑预留梯度阈值参数（当前仅实现 120% 基础解锁，护栏见 §6.3） |
 | 年度长期资产复盘报告 | `记账报表` 预留 `--year` 周期参数；`monthly_history` 天然支撑年度聚合 |
@@ -793,6 +801,7 @@ skills/self-trust/
     │   ├── formulas.py            # F0~F8 纯函数 + doctest（用本文档示例数字，防文档代码漂移）
     │   ├── contract.py            # 契约读写 + 三区权限强制（配置区写入必经 §5.4 闸门函数）
     │   ├── models.py              # schema dataclass + pending_requests 状态机
+│   ├── crypto.py             # [0.7.14] 静态加密：AES-256-GCM + PBKDF2（passphrase）/ 原始密钥（keyfile），可选依赖 cryptography
     │   └── audit.py               # F8 快照，<data-dir>/audit/*.jsonl 仅追加
     ├── modules/
     │   ├── judge.py               # §4.4 三场景判定 + 冷静期 + 白名单
@@ -938,6 +947,26 @@ skills/self-trust/
 - **数据隔离不互通**：每个配置者（用户）独立命名空间，跨用户/跨会话不共享、不串读。
 - 持久化与 §3 数据模式解耦：ledger/conversational/hybrid 只影响采集方式，最终状态统一落 `<data-dir>/`（默认 `<home>/.claw/self-trust/`，可覆盖），保证单点真相。
 
+**落盘健壮性（[0.7.15] 三层加固）**：`contract.json` 写入路径为**原子写**（唯一临时名 `contract.<pid>.<tid>.<uuid8>.tmp` + `os.replace` 整文件替换），并对写入内容**回读校验**（明文 `json.loads` / 密文 `unseal_json`），校验通过才替换、失败瞬态重试（≤3 次）且不破坏原好文件；读取时若检测到**拼接 / 截断 JSON**（写入中途被打断遗留的残缺文件），抛 `ContractCorruptedError` 并指向 `contract.json.bak.corrupt` 恢复路径，绝不裸抛 `Extra data`。**运维铁律**：任何命令报 `Extra data` / `request_not_found` 须**停手上报、勿重跑**——重跑可能把已修复文件又写花。
+
+### 10.5 静态加密（数据静态加密 at rest，opt-in）
+
+**问题**（[0.7.14]）：本地账本（资产 / 负债 / 消费习惯）明文存 `<home>/.claw/self-trust/`，可能被云同步（OneDrive / iCloud / 百度网盘）误带上云，个人完整财务画像泄露风险。
+
+**方案**：契约（`contract.json`）与审计日志（`audit/*.jsonl`）支持 **AES-256-GCM**（AEAD 认证加密，防篡改）静态加密落盘。**opt-in，默认关**——未启用时读写行为完全不变，向后兼容明文契约。
+
+**两条密钥路线（初始化时一次性决定，之后不可原地切换）**：
+- `passphrase`（默认）：用户口令，每次命令 `--pass <密码>`（或环境变量 `SELFTRUST_PASS`）；密钥由口令经 **PBKDF2-HMAC-SHA256（20 万轮）** 派生，**从不落盘**；口令丢失 = 数据不可解密。
+- `key-file`：首次 `init --encrypt --crypto-mode keyfile` 自动生成 `<data-dir>/.self-trust.key`（**权限 600**），后续命令自动定位、无需每次传参；密钥文件丢失 = 数据永久不可解密，须单独备份。
+
+**文件格式与透明兼容**：密文 = `MAGIC(STENC1\n) + 模式字节(P/K) + salt(仅 P) + nonce(12) + ct`；`is_encrypted` 魔数检测，存储层透明加解密（读明文契约走 `json.loads`、读密文走 `unseal_json`）。口令错误 → GCM tag 校验失败抛 `InvalidPassphrase`，引擎返回清晰错误（exit 5），**不静默用明文读写**。
+
+**依赖**：仅加密路径需可选依赖 `cryptography`；非加密路径纯标准库零依赖。未安装时引擎返回 `加密功能需安装 cryptography：pip install cryptography`。
+
+**设计约束**：
+- 切换加密状态（开→关 / 换路线）需 `reset --confirm` 后重新 `init`，现有契约不原地改密；
+- 加密**不改变 §10.1 审计「仅追加不可删」语义**，仅把追加内容转为密文——审计完整性在加密态下依旧成立。
+
 ---
 
 ## 11. AI 规则引擎公正性保障体系（中立、客观、可审计的强制约束）
@@ -1024,6 +1053,7 @@ skills/self-trust/
 | 初始化与命令 | 懒人 3 项模板 + 固化默认值；三场景模拟演示；全命令体系（含 记账对账、记账日志） | §7.1 / §7.2 / §9 |
 | 治理与审计 | 三区权限（配置只读/运行态可写/审计仅追加落 audit/ 独立文件）；每笔审批完整中间变量可复盘；公正性六大保障闭环 | §10 / §11 / F8 |
 | 四轮硬伤修复 | ①法律叙事剥离+负债刚性支出补齐 ②真实口径公式+护栏二次确认+柔性校准 ③21 处一致性（文本损坏/口径统一/权限矛盾） ④12 处运行时闭环（pending_requests 持久队列/生命周期/跨年重置） | 全文 |
+| 数据安全增强（v1.1） | 静态加密 opt-in（AES-256-GCM，passphrase/keyfile 双路线，默认关）；多币种 Level A+B（CNY 透传 / USD 折算）；落盘三层加固（读守卫 / 写前校验 / 唯一临时名，防「写盘 bug 复现」） | §10.5 / §2 / §10.4 |
 
 **落地引导**：设计阶段已闭环，下一步按 §8.3 骨架建 skill：
 1. 派 coder 创建 `skills/self-trust/` 完整文件树（SKILL.md + references/ 六篇 + templates/ + scripts/ + tests/）

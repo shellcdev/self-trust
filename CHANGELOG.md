@@ -1,5 +1,15 @@
 # CHANGELOG — self-trust
 
+## [0.7.17] - 2026-07-28
+
+### Docs（DESIGN.md 升 v1.1，补三项落地增强的设计落点）
+
+设计文档 `docs/DESIGN.md` 此前为 v1.0 定稿，今天三项增强缺设计层落点，本次补齐并升 v1.1：
+- **静态加密**：新增 §10.5（AES-256-GCM opt-in，passphrase/keyfile 双路线，MAGIC 检测，明文向后兼容，可选依赖 cryptography）；§2 schema 增 `crypto` 字段；§10.4 补「落盘健壮性三层加固」（读守卫/写前校验/唯一临时名）；目录与决策总表同步。
+- **多币种 Level A+B**：§2 schema 增 `currency` 字段（默认 CNY）；§8.2 扩展项由「预留字段」改为「[0.7.13] 已落地（CNY 透传 / USD 折算）」。
+- **骨架**：§8.3 目录树补 `core/crypto.py`。
+同步 `.workbuddy` 副本。无代码改动。
+
 ## [0.7.16] - 2026-07-28
 
 ### Docs（SKILL.md 加密用法段落补全）

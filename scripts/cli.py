@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from core import audit as audit_io           # noqa: E402
 from core import contract as contract_io     # noqa: E402
 from core import crypto as crypto_io         # noqa: E402
-from core.contract import GuardError         # noqa: E402
+from core.contract import GuardError, ContractCorruptedError  # noqa: E402
 from modules import calibrate as mod_cal     # noqa: E402
 from modules import customize as mod_customize  # noqa: E402
 from modules import governance as mod_gov    # noqa: E402
@@ -554,8 +554,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    _configure_crypto(args)
     try:
+        # _configure_crypto 会读契约探 crypto.enabled，损坏契约须在此被守卫捕获
+        _configure_crypto(args)
         return args.func(args)
     except FileNotFoundError as e:
         return _emit({"ok": False, "error": "not_found", "message": str(e)}, 2)
@@ -563,6 +564,10 @@ def main(argv: list[str] | None = None) -> int:
         return _emit({"ok": False, "error": "guard", "message": str(e)}, 3)
     except crypto_io.CryptoError as e:
         return _emit({"ok": False, "error": "crypto", "message": str(e)}, 5)
+    except ContractCorruptedError as e:
+        # 契约损坏（拼接/截断 JSON）：清晰指向 .bak.corrupt 恢复，不与 crypto 混淆
+        return _emit({"ok": False, "error": "contract_corrupted",
+                      "message": str(e), "recover": str(e.path) + ".bak.corrupt"}, 6)
     except (ValueError, TypeError) as e:
         return _emit({"ok": False, "error": "invalid", "message": str(e)}, 4)
 

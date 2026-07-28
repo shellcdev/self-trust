@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -29,6 +31,28 @@ CONTRACT_FILENAME = "contract.json"
 
 class GuardError(PermissionError):
     """三区权限 / §5.4 闸门违规（显式抛出，不吞错）。"""
+
+
+class ContractCorruptedError(Exception):
+    """契约文件损坏（拼接/截断 JSON 或加密体损坏）。
+
+    由 read_contract 读时守卫、write_contract 写前校验抛出；明确指向
+    contract.json.bak.corrupt 恢复路径，绝不裸抛 JSONDecodeError / 静默重写。
+    这是「写盘 bug 可能复现」的护栏：把 'Extra data' 变成可行动的清晰错误。
+    """
+
+    def __init__(self, path: Path, cause: Optional[BaseException] = None):
+        self.path = Path(path)
+        bak = self.path.with_name(self.path.name + ".bak.corrupt")
+        msg = (
+            f"契约文件损坏：{self.path}\n"
+            f"检测到拼接/截断的 JSON（根因：落盘中途被打断或并发抢写）。\n"
+            f"请用备份恢复：{bak}\n"
+            f"若无备份、请勿重跑命令——按引擎手动修法子处理。"
+        )
+        if cause is not None:
+            msg += f"\n底层错误：{type(cause).__name__}: {cause}"
+        super().__init__(msg)
 
 
 # §10.3 运行态区显式包含「lag_streak / used_annual」等计数器——它们物理上嵌在
@@ -83,11 +107,33 @@ def contract_exists(data_dir: Path) -> bool:
     return contract_path(data_dir).is_file()
 
 
+def _tmp_is_valid(tmp: Path) -> bool:
+    """回读校验刚写的 tmp：明文 json.loads / 加密 unseal_json，成功才算有效。
+
+    用于写前守卫——仅当 tmp 校验通过才 os.replace 到正式契约，绝不拿坏文件
+    替换好文件。校验失败（瞬态写花）由 write_contract 触发重试。
+    """
+    try:
+        raw = tmp.read_bytes()
+    except OSError:
+        return False
+    try:
+        if crypto_io.is_encrypted(raw):
+            crypto_io.unseal_json(raw)
+        else:
+            json.loads(raw.decode("utf-8"))
+        return True
+    except (json.JSONDecodeError, UnicodeDecodeError, crypto_io.CryptoError):
+        return False
+
+
 def read_contract(data_dir: Path) -> dict[str, Any]:
     """读契约；不存在则 FileNotFoundError（显式，不返回空契约假装存在）。
 
     透明解密：文件为加密格式（crypto.is_encrypted）→ 用 session 密钥材料解密；
     否则明文 json.loads（向后兼容旧契约）。加密契约但 session 未设密钥 → CryptoError。
+    读时守卫：明文契约若检测到拼接/截断 JSON（'Extra data' 类）→ 抛
+    ContractCorruptedError 并指向 .bak.corrupt 恢复，绝不裸抛 JSONDecodeError。
     """
     path = contract_path(data_dir)
     if not path.is_file():
@@ -95,7 +141,10 @@ def read_contract(data_dir: Path) -> dict[str, Any]:
     raw = path.read_bytes()
     if crypto_io.is_encrypted(raw):
         return crypto_io.unseal_json(raw)
-    return json.loads(raw.decode("utf-8"))
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        raise ContractCorruptedError(path, e) from e
 
 
 def _validate_zones(new: dict[str, Any], old: Optional[dict[str, Any]],
@@ -132,10 +181,16 @@ def write_contract(
     confirm: bool = False,
     allow_create: bool = False,
 ) -> Path:
-    """写契约（整文件原子替换），写前强制三区权限校验。
+    """写契约（整文件原子替换），写前强制三区权限校验 + 写前回读守卫。
 
     actor: "engine"（运行态区可写）| "configurator"（配置区可写，护栏字段须 confirm）
     allow_create: 仅初始化/重置路径可 True；常规写要求契约已存在。
+
+    写前守卫（防「写盘 bug 复现」）：
+    - 旧契约读取走 read_contract（自动解密；明文损坏在此抛 ContractCorruptedError）。
+    - 写入用 pid+tid+uuid 唯一临时名；tmp 回读校验通过才 os.replace 正式契约。
+    - 校验失败瞬态重试（最多 3 次）；全部失败则抛 ContractCorruptedError，
+      **原契约完好保留**，绝不拿坏文件替换好文件。
     """
     if actor not in ("engine", "configurator"):
         raise GuardError(f"未知 actor: {actor!r}")
@@ -143,7 +198,7 @@ def write_contract(
     path = contract_path(data_dir)
     old: Optional[dict[str, Any]] = None
     if path.is_file():
-        # 旧契约读取走 read_contract（自动解密加密契约）；明文契约原样返回
+        # 旧契约读取走 read_contract（自动解密加密契约；明文损坏在此抛守卫错误）
         old = read_contract(data_dir)
     elif not allow_create:
         raise FileNotFoundError(f"契约不存在: {path}（请先运行 init）")
@@ -154,21 +209,51 @@ def write_contract(
     _validate_zones(contract, old, actor, confirm)
 
     data_dir.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    # 透明加密：契约 crypto.enabled → 用 session 密钥材料密封为字节；否则明文 JSON
-    # 注：旧契约读取须走 read_contract（自动解密），不可明文 json.load，否则加密契约
-    # 二次写入时读旧值会触发 utf-8 解码错误。
-    if contract.get("crypto", {}).get("enabled"):
-        if not crypto_io.have_session():
-            raise crypto_io.CryptoError(
-                "契约已启用加密，写入需密钥材料：--pass / --key-file 或对应环境变量")
-        blob = crypto_io.seal_json(contract)
-        with open(tmp, "wb") as f:
-            f.write(blob)
-    else:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(contract, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    encrypted = bool(contract.get("crypto", {}).get("enabled"))
+    if encrypted and not crypto_io.have_session():
+        raise crypto_io.CryptoError(
+            "契约已启用加密，写入需密钥材料：--pass / --key-file 或对应环境变量")
+
+    # 写前守卫：唯一临时名写入 → 回读校验 → 通过才替换；失败瞬态重试，绝不留残缺
+    last_err: Optional[BaseException] = None
+    valid_tmp: Optional[Path] = None
+    for _attempt in range(3):
+        tmp = path.with_name(
+            f"{path.stem}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex[:8]}.tmp")
+        try:
+            if encrypted:
+                blob = crypto_io.seal_json(contract)
+                with open(tmp, "wb") as f:
+                    f.write(blob)
+            else:
+                # 透明加密：契约 crypto.enabled → 用 session 密钥材料密封为字节；否则明文 JSON
+                # 注：旧契约读取须走 read_contract（自动解密），不可明文 json.load，否则加密契约
+                # 二次写入时读旧值会触发 utf-8 解码错误。
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(contract, f, ensure_ascii=False, indent=2)
+            if _tmp_is_valid(tmp):
+                valid_tmp = tmp
+                break
+            last_err = ValueError("tmp 回读校验失败（内容无效）")
+        except (OSError, json.JSONDecodeError, crypto_io.CryptoError) as e:
+            last_err = e
+        # 本轮 tmp 无效或写失败：清理，下一轮重抽唯一名重来
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+    if valid_tmp is None:
+        # 三次均失败：绝不拿坏文件替换好文件——原契约完好保留，交由用户按法子修
+        raise ContractCorruptedError(path, last_err)
+    # 校验通过的 tmp 原子替换正式契约；replace 失败清理 tmp 并上抛
+    try:
+        os.replace(valid_tmp, path)
+    except BaseException:
+        try:
+            valid_tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
     return path
 
 

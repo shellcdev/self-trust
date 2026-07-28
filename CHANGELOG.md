@@ -1,5 +1,21 @@
 # CHANGELOG — self-trust
 
+## [0.7.15] - 2026-07-28
+
+### Hardening（落盘健壮性三层加固 — 防「写盘 bug 复现」）
+
+**问题**：引擎落盘 `contract.json` 曾出现「两段拼接 JSON（第一段完整、第二段残缺）」，根因是写入中途被打断 / 进程被 kill / 外部同步或编辑器并发抢写（tmp→`os.replace` 之间留窗）。复现风险高；且一旦损坏，重跑命令可能把已修复文件又写花。
+
+**三层加固（`core/contract.py` + `cli.py`）**：
+- **Layer 1 读时守卫**：`read_contract` 明文契约若 `json.loads` 抛 `JSONDecodeError`（拼接/截断）→ 抛 `ContractCorruptedError`，消息明确指向 `contract.json.bak.corrupt` 恢复路径，绝不裸抛 `Extra data`。
+- **Layer 2 写前校验**：`write_contract` 写入 tmp 后**回读校验**（`_tmp_is_valid`：明文 `json.loads` / 加密 `unseal_json`），通过才 `os.replace` 正式契约；校验失败瞬态重试（最多 3 次），全部失败则抛 `ContractCorruptedError`，**原契约完好保留**，绝不拿坏文件替换好文件。
+- **Layer 3 唯一临时名**：tmp 名 = `contract.<pid>.<tid>.<uuid8>.tmp`（用户已落地），规避多进程 tmp 碰撞。
+- **CLI 出口**：`main` 将 `_configure_crypto`（读契约探 crypto.enabled）纳入 try，捕获 `ContractCorruptedError` → `error=contract_corrupted` + **退出码 6**（不与 crypto 的 exit 5 混淆）。
+
+**测试**：新增 `scripts/tests/test_contract_integrity.py`（5 例：拼接 JSON / 截断 JSON 触发守卫且消息含 `.bak.corrupt`；tmp 校验失败时保留原好文件无 tmp 残留；成功无 tmp 残留；CLI exit 6）。全量 **363 passed**（358 + 5）。
+
+**行为约束（固化到长期记忆）**：任何命令报 `Extra data` / `request_not_found` → **绝不重跑**，停手上报，由用户按手动修法子处理（留痕 `contract.json.bak.corrupt`）。
+
 ## [0.7.14] - 2026-07-28
 
 ### Feature（静态加密开关 — 方案 C：passphrase + key-file 双路线，opt-in 默认关）

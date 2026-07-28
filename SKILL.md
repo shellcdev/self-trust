@@ -56,7 +56,7 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 - `--data-dir <path>`：数据目录（优先级：命令行 > `SELFTRUST_DATA_DIR` > 默认 `<home>/.claw/self-trust/`）；
 - `--today YYYY-MM-DD`：覆盖当前日期（测试/重放用，日常勿传）；
 - `--pass <密码>` / `--key-file <路径>`：加密契约密钥（passphrase / key-file 二选一，须置于子命令前）；亦可用环境变量 `SELFTRUST_PASS` / `SELFTRUST_KEY_FILE`；非加密契约无需传；
-- 输出恒为 JSON（`--json` 为默认且唯一格式）；失败时 `{"ok": false, "error": ..., "message": ...}` + 非零退出码（2=not_found / 3=guard 权限违规 / 4=invalid 参数 / **5=crypto 加密（缺密钥或密码错误）**）。
+- 输出恒为 JSON（`--json` 为默认且唯一格式）；失败时 `{"ok": false, "error": ..., "message": ...}` + 非零退出码（2=not_found / 3=guard 权限违规 / 4=invalid 参数 / **5=crypto 加密（缺密钥或密码错误）** / **6=contract_corrupted 契约损坏（拼接/截断 JSON，见 `.bak.corrupt` 恢复，勿重跑）**）。
 
 ## references 加载路由（按需读，别全读）
 
@@ -83,7 +83,7 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 
 ## 状态
 
-核心闭环（初始化→审批→冷静期→报表→校准→奖励→申诉/覆写→重置→对账）+ §7.2 演示干跑 + §3.1 平滑过渡计数器 + 记账自定义（§5.4 闸门入口，含模式切换/白名单增删/类目增删/**冷却窗**）+ **负债/房贷建模**（净资产决策口径 + 融资购房 + 负债/刚性支出建账 + 记录购房落账）+ **§7.3 第三方导入**（CSV/手动拉取→人工核对确认→落盘；imported_pending 锁定审批、确认后 imported_confirmed；#1 修复：缺类不静默清空 live）+ **支出类目词汇表专用开关**（`--add-category`/`--remove-category`）+ **多币种（Level A+B）** + **静态加密开关（方案 C：passphrase/keyfile，默认关）** 已实装并通过测试（358 单测 + 12 端到端）。实现进度见 STATUS.md（真相源）。
+核心闭环（初始化→审批→冷静期→报表→校准→奖励→申诉/覆写→重置→对账）+ §7.2 演示干跑 + §3.1 平滑过渡计数器 + 记账自定义（§5.4 闸门入口，含模式切换/白名单增删/类目增删/**冷却窗**）+ **负债/房贷建模**（净资产决策口径 + 融资购房 + 负债/刚性支出建账 + 记录购房落账）+ **§7.3 第三方导入**（CSV/手动拉取→人工核对确认→落盘；imported_pending 锁定审批、确认后 imported_confirmed；#1 修复：缺类不静默清空 live）+ **支出类目词汇表专用开关**（`--add-category`/`--remove-category`）+ **多币种（Level A+B）** + **静态加密开关（方案 C：passphrase/keyfile，默认关）** 已实装并通过测试（363 单测 + 12 端到端）。实现进度见 STATUS.md（真相源）。
 
 ## 依赖
 

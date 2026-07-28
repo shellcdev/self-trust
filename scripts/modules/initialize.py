@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from core import contract as contract_io
+from core import crypto as crypto_io
 from core.contract import GuardError  # noqa: F401  (re-export for callers)
 
 
@@ -29,6 +30,9 @@ def lazy_init(
     monthly_contribution: float,
     objectives: list[dict[str, Any]],
     today: date | None = None,
+    currency: str = "CNY",
+    encrypt: bool = False,
+    crypto_mode: str = "passphrase",
 ) -> dict[str, Any]:
     """懒人一键初始化。返回结构化结果 {ok, contract_path, warnings, rejected_objectives}。
 
@@ -80,6 +84,7 @@ def lazy_init(
     c = contract_io.new_default_contract()
     c["corpus"] = float(corpus)
     c["monthly_contribution"] = float(monthly_contribution)
+    c["currency"] = (currency or "CNY").upper()
     n = len(accepted)
     c["objectives"] = [
         {
@@ -106,6 +111,34 @@ def lazy_init(
             "living_baseline / safety_cushion 据此偏高，"
             "建议尽快 `记账自定义` 补 liabilities / rigid_annual_expenses"
         )
+
+    # 静态加密配置（方案 C：开关 + 双路线）
+    if encrypt:
+        mode = crypto_mode if crypto_mode in ("passphrase", "keyfile") else "passphrase"
+        key_file: str | None = None
+        if mode == "keyfile":
+            # 生成随机 key 文件（权限 600），路径相对 data-dir，便于整体备份迁移
+            key_file = str(crypto_io.generate_key_file(
+                Path(data_dir) / ".self-trust.key"))
+            crypto_io.set_session(key_file=key_file)   # 让 write_contract 能密封
+        # passphrase 模式：密钥由 CLI 经 --pass 设入 session，此处不接触明文密码
+        c["crypto"] = {
+            "enabled": True,
+            "mode": mode,
+            "kdf": "pbkdf2",
+            "iterations": 200_000,
+            "key_file": key_file,
+        }
+        if mode == "keyfile":
+            warnings.append(
+                "⚠️ 已启用静态加密（key-file 模式）：密钥文件 .self-trust.key 已生成"
+                "（权限 600），迁移/备份 data-dir 时须一并带走，丢失则数据不可恢复"
+            )
+        else:
+            warnings.append(
+                "已启用静态加密（passphrase 模式）：每次操作需 --pass 或 "
+                "SELFTRUST_PASS 环境变量，密码不落盘"
+            )
 
     path = contract_io.write_contract(
         data_dir, c, actor="configurator", confirm=True, allow_create=True)

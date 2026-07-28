@@ -14,6 +14,24 @@ from typing import Any, Optional
 
 SCHEMA_VERSION = "0.1"
 
+# 币种 → 显示符号映射（渲染层用，引擎数字计算与币种无关）
+CURRENCY_SYMBOLS: dict[str, str] = {
+    "CNY": "¥",
+    "USD": "$",
+    "EUR": "€",
+    "GBP": "£",
+    "HKD": "HK$",
+    "JPY": "¥",
+    "SGD": "S$",
+    "AUD": "A$",
+    "CAD": "C$",
+}
+
+
+def currency_symbol(code: str) -> str:
+    """取币种显示符号；未知币种回退到 code 本身。"""
+    return CURRENCY_SYMBOLS.get((code or "CNY").upper(), code or "CNY")
+
 
 class Zone(str, Enum):
     CONFIG = "config"    # 配置区：引擎只读
@@ -25,6 +43,8 @@ class Zone(str, Enum):
 FIELD_ZONES: dict[str, Zone] = {
     # ---- 配置区（引擎只读）----
     "version": Zone.CONFIG,
+    "currency": Zone.CONFIG,          # 基准币种（默认 CNY，渲染层符号来源）
+    "crypto": Zone.CONFIG,            # 静态加密配置（默认关；引擎只读，仅 init 设置）
     "corpus": Zone.CONFIG,             # 仅初始化/对账/经审批支取可动（走闸门）
     "corpus_status": Zone.CONFIG,
     "liabilities": Zone.CONFIG,
@@ -137,6 +157,7 @@ class SafetyCushion:
 class Contract:
     """记账契约（§2 schema 草案；审计日志物理分离，不含 *_log 字段）。"""
     version: str = SCHEMA_VERSION
+    currency: str = "CNY"             # 基准币种（默认人民币，渲染层符号来源）
     corpus: float = 0.0
     corpus_status: str = "manual"   # manual | imported_pending | imported_confirmed
     liabilities: list[dict[str, Any]] = field(default_factory=list)
@@ -190,6 +211,13 @@ class Contract:
     last_report_date: Optional[str] = None
     report_streak: int = 0
     gap_streak: int = 0
+    crypto: dict[str, Any] = field(default_factory=lambda: {
+        "enabled": False,           # 静态加密总开关（默认关，向后兼容明文）
+        "mode": "passphrase",       # passphrase | keyfile（密钥材料路线）
+        "kdf": "pbkdf2",            # 派生算法（passphrase 模式）
+        "iterations": 200_000,      # PBKDF2 迭代次数（passphrase 模式）
+        "key_file": None,           # keyfile 模式：密钥文件路径（相对 data-dir 或绝对）
+    })
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

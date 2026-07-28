@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from core import audit as audit_io           # noqa: E402
 from core import contract as contract_io     # noqa: E402
+from core import crypto as crypto_io         # noqa: E402
 from core.contract import GuardError         # noqa: E402
 from modules import calibrate as mod_cal     # noqa: E402
 from modules import customize as mod_customize  # noqa: E402
@@ -89,6 +90,49 @@ def _today(args) -> date | None:
     return date.fromisoformat(args.today) if getattr(args, "today", None) else None
 
 
+def _configure_crypto(args) -> None:
+    """按 CLI/环境变量设置加密 session + 审计加密标志（方案 C）。
+
+    - passphrase 模式：--pass / SELFTRUST_PASS 提供密码；
+    - key-file 模式：--key-file / SELFTRUST_KEY_FILE 提供密钥文件路径；
+    - 非 init 命令：按已存在契约的 crypto.enabled 设置审计日志加密标志；
+    - init 命令：按 --encrypt 设置审计加密标志（契约尚不存在）。
+    """
+    import os
+    passphrase = getattr(args, "pass_", None)
+    key_file = getattr(args, "key_file", None)
+    if not passphrase and not key_file:           # 环境变量回退
+        passphrase = os.environ.get("SELFTRUST_PASS")
+        key_file = os.environ.get("SELFTRUST_KEY_FILE")
+    crypto_io.set_session(passphrase=passphrase, key_file=key_file)
+
+    if getattr(args, "command", None) == "init":
+        crypto_io.set_audit_encrypted(bool(getattr(args, "encrypt", False)))
+        return
+    # 其余命令：探测现有契约，按其加密开关设置审计加密标志
+    try:
+        dd = contract_io.resolve_data_dir(args.data_dir)
+    except Exception:
+        crypto_io.set_session(passphrase=passphrase, key_file=key_file)
+        crypto_io.set_audit_encrypted(False)
+        return
+    enabled = False
+    if contract_io.contract_exists(dd):
+        # key-file 模式密钥默认落在 <data-dir>/.self-trust.key，无需读契约即可定位
+        if not passphrase and not key_file:
+            default_kf = dd / ".self-trust.key"
+            if default_kf.is_file():
+                key_file = str(default_kf)
+        try:
+            contract = contract_io.read_contract(dd)
+            enabled = bool(contract.get("crypto", {}).get("enabled"))
+        except crypto_io.CryptoError:
+            # 加密契约但密钥不对/缺失：标记加密，让具体命令读时抛清晰错误
+            enabled = True
+    crypto_io.set_session(passphrase=passphrase, key_file=key_file)
+    crypto_io.set_audit_encrypted(enabled)
+
+
 def cmd_init(args) -> int:
     data_dir = contract_io.resolve_data_dir(args.data_dir)
     objectives = [_parse_objective(s) for s in (args.objective or [])]
@@ -98,6 +142,9 @@ def cmd_init(args) -> int:
         monthly_contribution=args.monthly,
         objectives=objectives,
         today=_today(args),
+        currency=args.currency,
+        encrypt=args.encrypt,
+        crypto_mode=args.crypto_mode,
     )
     return _emit(result, 0 if result.get("ok") else 1)
 
@@ -115,7 +162,9 @@ def cmd_judge(args) -> int:
             financed_amount=args.financed_amount,
             financed_term_years=args.financed_term_years,
             financed_rate=args.financed_rate,
-            financed_monthly=args.financed_monthly)
+            financed_monthly=args.financed_monthly,
+            currency=args.currency,
+            exchange_rate=args.rate)
     elif action in ("withdraw", "finalize") and not args.request_id:
         result = {"ok": False, "error": "invalid",
                   "message": f"{action} 须提供 --request-id"}
@@ -341,6 +390,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="结构化 JSON 输出（默认且唯一格式）")
     p.add_argument("--today", default=None,
                    help="覆盖当前日期 YYYY-MM-DD（测试/重放用）")
+    p.add_argument("--pass", dest="pass_", default=None,
+                   help="加密契约密码（passphrase 模式）；亦可用环境变量 SELFTRUST_PASS")
+    p.add_argument("--key-file", dest="key_file", default=None,
+                   help="加密密钥文件路径（key-file 模式）；亦可用环境变量 SELFTRUST_KEY_FILE")
     sub = p.add_subparsers(dest="command", required=True)
 
     sp = sub.add_parser("init", help="懒人一键初始化（§7.1）")
@@ -349,6 +402,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="月度净流入（净口径：税后收入-负债月供-刚性月摊）")
     sp.add_argument("--objective", action="append", required=True,
                     help='目标 "名称:目标额:期限"（1~3 个，可重复传）')
+    sp.add_argument("--currency", default="CNY",
+                    help="基准币种代码（默认 CNY；USD/EUR/GBP/HKD/JPY 等）")
+    sp.add_argument("--encrypt", action="store_true",
+                    help="启用静态加密（opt-in，默认关）；配合 --crypto-mode 选密钥路线")
+    sp.add_argument("--crypto-mode", default="passphrase",
+                    choices=["passphrase", "keyfile"],
+                    help="加密密钥路线：passphrase（密码，每次 --pass）| keyfile（自动生成密钥文件）")
     sp.set_defaults(func=cmd_init)
 
     sp = sub.add_parser("judge", help="支取审批统一判定 + 冷静期生命周期（§4.4/§5.1）")
@@ -368,6 +428,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="融资购房：贷款年利率（默认 0.04）")
     sp.add_argument("--financed-monthly", type=float, default=None,
                     help="融资购房：已知月供（给定则跳过估算）")
+    sp.add_argument("--currency", default="CNY",
+                    help="消费币种代码（默认 CNY；非 CNY 须同时提供 --rate）")
+    sp.add_argument("--rate", type=float, default=None,
+                    help="汇率（消费币种→基准币种；如 USD→CNY 7.25）；非 CNY 时必填")
     sp.set_defaults(func=cmd_judge)
 
     sp = sub.add_parser("demo", help="三场景模拟演示（§7.2，干跑不落盘不影响真实账户）")
@@ -490,12 +554,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    _configure_crypto(args)
     try:
         return args.func(args)
     except FileNotFoundError as e:
         return _emit({"ok": False, "error": "not_found", "message": str(e)}, 2)
     except GuardError as e:
         return _emit({"ok": False, "error": "guard", "message": str(e)}, 3)
+    except crypto_io.CryptoError as e:
+        return _emit({"ok": False, "error": "crypto", "message": str(e)}, 5)
     except (ValueError, TypeError) as e:
         return _emit({"ok": False, "error": "invalid", "message": str(e)}, 4)
 

@@ -8,10 +8,13 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+
+from . import crypto as crypto_io
 
 AUDIT_SUBDIR = "audit"
 
@@ -85,33 +88,74 @@ def _locked_append(path: Path, line: str) -> None:
                     pass
 
 
+def _atomic_write_bytes(path: Path, blob: bytes) -> None:
+    """加密日志整文件原子写（tmp + replace），保持与明文契约一致的原子性。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".jsonl.tmp")
+    with open(tmp, "wb") as f:
+        f.write(blob)
+    os.replace(tmp, path)
+
+
+def _append_encrypted(path: Path, line: str) -> None:
+    """加密日志追加：读解密 → 追加行 → 重加密整文件写回（个人单机场景可接受）。"""
+    existing = ""
+    if path.is_file():
+        raw = path.read_bytes()
+        if crypto_io.is_encrypted(raw):
+            existing = crypto_io.unseal(raw).decode("utf-8")
+        else:
+            existing = raw.decode("utf-8")   # 明文转加密（如刚开启加密的存量日志）
+    text = (existing + "\n" + line) if existing.strip() else line
+    _atomic_write_bytes(path, crypto_io.seal(text.encode("utf-8")))
+
+
 def append(data_dir: Path, log_name: str, record: dict[str, Any]) -> Path:
-    """仅追加一条审计记录。record 必须是可 JSON 序列化 dict。"""
+    """仅追加一条审计记录。record 必须是可 JSON 序列化 dict。
+
+    透明加密：审计加密标志开启（契约 crypto.enabled）→ 整文件加密追加；
+    若日志已加密则解密追加后重加密；否则明文追加（沿用原文件锁逻辑）。
+    """
     if not isinstance(record, dict):
         raise TypeError(f"审计记录必须为 dict，得到 {type(record).__name__}")
     path = log_path(data_dir, log_name)
     line = json.dumps(record, ensure_ascii=False)
-    _locked_append(path, line)
+    if crypto_io._audit_encrypted or (
+            path.is_file() and crypto_io.is_encrypted(path.read_bytes())):
+        if not crypto_io.have_session():
+            raise crypto_io.CryptoError(
+                "审计日志已启用加密，追加需密钥材料：--pass / --key-file 或对应环境变量")
+        _append_encrypted(path, line)
+    else:
+        _locked_append(path, line)
     return path
 
 
 def read_all(data_dir: Path, log_name: str) -> list[dict[str, Any]]:
-    """只读全量读取（记账日志 查询用）；文件不存在返回空列表。"""
+    """只读全量读取（记账日志 查询用）；文件不存在返回空列表。
+
+    透明解密：日志为加密格式（crypto.is_encrypted）→ 解密后逐行解析；
+    否则明文逐行解析（向后兼容）。
+    """
     path = log_path(data_dir, log_name)
     if not path.is_file():
         return []
+    raw = path.read_bytes()
+    if crypto_io.is_encrypted(raw):
+        text = crypto_io.unseal(raw).decode("utf-8")
+    else:
+        text = raw.decode("utf-8")
     records: list[dict[str, Any]] = []
-    with open(path, "r", encoding="utf-8") as f:
-        for i, line in enumerate(f, 1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
-                # L9：损坏行（如崩溃时的半截写入）跳过而非抛错，避免前序已读记录全部丢失；
-                # 仅追加日志的健壮性优先于严格性，关键失败仍由调用方业务逻辑暴露。
-                continue
+    for i, line in enumerate(text.splitlines(), 1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            # L9：损坏行（如崩溃时的半截写入）跳过而非抛错，避免前序已读记录全部丢失；
+            # 仅追加日志的健壮性优先于严格性，关键失败仍由调用方业务逻辑暴露。
+            continue
     return records
 
 

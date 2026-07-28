@@ -45,3 +45,38 @@ python scripts/cli.py demo
 - `auto`（默认）：monthly_contribution × 0.5，随注入额联动；
 - `manual`：用户固定额；
 - `history3m`：近 3 月均值，无历史回退 auto（引擎 `living_baseline_value()` 已实现取值逻辑）。
+
+## 4. 静态加密开关（方案 C，opt-in 默认关）——已实现
+
+本地账本是完整财务画像（资产/负债/消费习惯），默认明文存 `<home>/.claw/self-trust/`，
+可能被云同步（OneDrive/iCloud/百度网盘）误带上云。启用加密后契约与审计日志整文件
+AES-256-GCM 加密（防篡改 + 保密），密钥派生 passphrase → PBKDF2-HMAC-SHA256（20 万轮）。
+
+```bash
+# passphrase 模式（推荐，密钥不落盘）：每次操作须 --pass 或 SELFTRUST_PASS
+python scripts/cli.py --pass <密码> init --corpus 200000 --monthly 8000 \
+    --objective "FIRE:3000000:2036-01-01" --encrypt --crypto-mode passphrase
+
+# key-file 模式（无感，自动生成密钥文件权限 600）：迁移须带走 .self-trust.key
+python scripts/cli.py init --corpus 200000 --monthly 8000 \
+    --objective "FIRE:3000000:2036-01-01" --encrypt --crypto-mode keyfile
+```
+
+两种密钥路线（CLI 全局参数 `--pass` / `--key-file`，须置于子命令前；亦可用环境变量
+`SELFTRUST_PASS` / `SELFTRUST_KEY_FILE`）：
+
+| 路线 | 密钥材料 | 体验 | 安全 |
+|---|---|---|---|
+| **passphrase** | 用户密码 | 每次操作需 `--pass`（或 env），密码不落盘 | 最高 |
+| **keyfile** | 自动生成 `<data-dir>/.self-trust.key`（600） | 无感，key-file 模式自动定位密钥 | 防云同步泄露/窥探够用；key 与密文同备份，防定向窃取不足 |
+
+行为：
+- 启用后契约 `crypto.enabled=true`，落盘为加密字节（魔数 `STENC1` 头）；
+- 所有读/写（契约 + `audit/*.jsonl`）自动加解密，旧明文契约向后兼容（无魔数头→明文直读）；
+- 缺密钥（未传 `--pass`/密钥文件丢失）→ 引擎返回 `error=crypto`（退出码 5）；
+- 密码错误 → `InvalidPassphrase`（同一退出码 5）；
+- **keyfile 模式密钥文件丢失 = 数据不可恢复**，回执附 ⚠️ 警告；
+- 依赖：加密功能需 `cryptography`（`pip install cryptography`），非加密路径纯标准库零依赖。
+
+切换加密开关：当前不支持「已初始化契约在线切换加密状态」——如需切换，请 `reset --confirm`
+重建契约并在新 init 时决定是否加密（reset 保留 audit 历史，但历史审计若曾明文不回溯加密）。

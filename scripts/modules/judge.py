@@ -23,6 +23,7 @@ from core import contract as contract_io
 from core import formulas as F
 from core.models import (
     PendingRequest, RequestStatus, can_transition, living_baseline_value,
+    currency_symbol,
 )
 from modules import streaks
 
@@ -173,8 +174,15 @@ def judge(
     financed_term_years: float | None = None,
     financed_rate: float | None = None,
     financed_monthly: float | None = None,
+    currency: str = "CNY",
+    exchange_rate: float | None = None,
 ) -> dict[str, Any]:
     """§4.4 统一判定入口（纯函数，不落盘）。返回结构化 JSON。
+
+    多币种支持（Level B）：
+    - currency=CNY（默认）：直接用 amount 判定，行为不变（向后兼容）。
+    - currency≠CNY：须提供 exchange_rate；amount_cny = amount * rate，
+      全部判定逻辑在 amount_cny 上运行。inputs 额外记录原始金额/币种/汇率。
 
     融资购房（financed_amount>0）：大额资产购买拆为「首付(打 liquid) + 房贷(变负债+月供)」。
     决策口径：
@@ -186,6 +194,21 @@ def judge(
     LLM 铁律：禁止心算，数字必须原样引用本函数输出。
     """
     today = today or date.today()
+
+    # ---- 多币种换算（Level B）----
+    currency = (currency or "CNY").upper()
+    base_currency = (contract.get("currency") or "CNY").upper()
+    original_amount = float(amount)
+    original_currency = currency
+    rate_used: float | None = None
+    if currency != base_currency:
+        if exchange_rate is None or exchange_rate <= 0:
+            return {"ok": False, "error": "missing_rate",
+                    "message": f"币种 {currency} ≠ 基准币种 {base_currency}，"
+                               f"须提供有效 --rate（>0）"}
+        rate_used = float(exchange_rate)
+        amount = original_amount * rate_used    # 判定用换算后金额
+
     if amount <= 0:
         return {"ok": False, "error": "invalid_amount",
                 "message": "申请金额必须为正数"}
@@ -337,6 +360,10 @@ def judge(
             "mortgage_monthly": mortgage_monthly,
             "debt_service_ok": debt_service_ok,
             "actual_cash_out": actual_cash_out,
+            "base_currency": base_currency,
+            "original_amount": original_amount if currency != base_currency else None,
+            "original_currency": original_currency if currency != base_currency else None,
+            "exchange_rate": rate_used,
         },
         "impact": {
             "delay_months_simple": delay_simple,
@@ -360,15 +387,20 @@ def _record_pending_spend(contract: dict[str, Any], request_id: str,
                           today: date | None = None) -> None:
     """M4：把审批通过的支出记入运行时台账 pending_spends（引擎可写，不碰配置区 corpus）。
     仅记录实际现金流出，供 reconcile 对账时并入并清空，消除「审批不自动扣 corpus」的静默坑。"""
+    inp = result.get("inputs", {})
     contract.setdefault("pending_spends", []).append({
         "request_id": request_id,
         "time": audit_io.now_iso(today),   # M1：审计时间对齐逻辑 today
-        "amount": float(amount),
-        "actual_cash_out": float(result["inputs"].get("actual_cash_out", amount)),
+        "amount": float(amount),           # 原始金额（用户输入）
+        "amount_base": float(inp.get("amount", amount)),  # 换算后金额（基准币种）
+        "actual_cash_out": float(inp.get("actual_cash_out", amount)),
         "category": category,
         "planned": planned,
         "scene": result["decision"]["scene"],
         "financed_amount": float(financed_amount or 0),
+        "currency": inp.get("original_currency"),       # None=CNY 原生
+        "exchange_rate": inp.get("exchange_rate"),       # None=CNY 原生
+        "base_currency": inp.get("base_currency", "CNY"),
         "status": status,
     })
 
@@ -403,6 +435,8 @@ def submit(
     financed_term_years: float | None = None,
     financed_rate: float | None = None,
     financed_monthly: float | None = None,
+    currency: str = "CNY",
+    exchange_rate: float | None = None,
 ) -> dict[str, Any]:
     """审批提交编排：judge → 冷静期入队 / 白名单额度记账 → F8 快照落审计。
 
@@ -415,7 +449,8 @@ def submit(
     result = judge(
         contract, amount=amount, category=category, planned=planned, today=today,
         financed_amount=financed_amount, financed_term_years=financed_term_years,
-        financed_rate=financed_rate, financed_monthly=financed_monthly)
+        financed_rate=financed_rate, financed_monthly=financed_monthly,
+        currency=currency, exchange_rate=exchange_rate)
     if not result.get("ok"):
         return result
 
@@ -458,6 +493,11 @@ def submit(
             "financed_amount": float(financed_amount or 0),
             "down_payment": result["inputs"].get("down_payment", float(amount)),
             "mortgage_monthly": result["inputs"].get("mortgage_monthly", 0.0),
+            "original_amount": result["inputs"].get("original_amount"),
+            "original_currency": result["inputs"].get("original_currency"),
+            "exchange_rate": result["inputs"].get("exchange_rate"),
+            "base_currency": result["inputs"].get("base_currency", "CNY"),
+            "amount_base": float(result["inputs"].get("amount", amount)),
         }
         contract.setdefault("pending_requests", []).append(entry)
         result["request_id"] = request_id
@@ -490,6 +530,10 @@ def submit(
         "fast_track": bool(result["whitelist"].get("fast_track")),
         "request_id": request_id,
         "planned": planned,
+        "original_amount": result["inputs"].get("original_amount"),
+        "original_currency": result["inputs"].get("original_currency"),
+        "exchange_rate": result["inputs"].get("exchange_rate"),
+        "base_currency": result["inputs"].get("base_currency", "CNY"),
     })
     # §3.1 平滑过渡软建议（仅 hybrid；文案带真实计数；引擎不自动改 mode）
     result["mode_transition_hint"] = streaks.transition_hint(contract)

@@ -32,6 +32,22 @@
 涉及「信托/资产保护/法律」话题时，明确声明：**本工具为个人自律记账工具，无法律效力**（§0）。
 日常审批/报表不需要每次重复声明。
 
+### 0.4 多币种渲染
+
+**符号来源**：取 `inputs.base_currency`（或 contract.currency）→ 查 CURRENCY_SYMBOLS 映射。
+CNY→¥ / USD→$ / EUR→€ / GBP→£ / HKD→HK$ / JPY→¥ / SGD→S$ / AUD→A$ / CAD→C$。未知币种用 code 本身。
+
+**外币消费（original_currency ≠ null）**：金额行双显——原始 + 换算后：
+
+```
+· 消费金额：$200.00 USD（汇率 7.25 → ¥1,450.00 CNY）
+```
+
+- `inputs.original_amount` / `inputs.original_currency` / `inputs.exchange_rate` 有值时才双显
+- CNY 原生消费（`original_amount=null`）：单显基准币种金额，不画蛇添足
+- 审计日志/冷静期提醒中外币条目同样双显：`$200.00 USD (→¥1,450.00)`
+- 汇率保留 2 位小数 + `→` 箭头表示换算方向
+
 ### 0.4 引擎错误渲染
 
 | 退出码 | error 值 | 用户提示 | 处理建议 |
@@ -45,6 +61,7 @@
 | 1 | `request_not_found` | 「未找到该申请，可能已终裁或撤回」 | 引导查 reminders 或 log |
 | 1 | `not_due` | 「该申请尚未到期，请到期后再终裁」 | 展示 expire_at |
 | 1 | `already_expired` | 「该申请已过期，请走到期终裁」 | 引导 expire |
+| 1 | `missing_rate` | 「{message}」 | 引导提供 `--rate`（如 USD→CNY 7.25） |
 | 1 | `override_not_open` | 「尚未达到人工覆写条件（须连续 3 次申诉被驳）」 | 引导继续申诉或接受判定 |
 | 1 | `cushion_violation` | 「奖励支取击穿安全垫，规则引擎拒付」 | 引导缩减金额或等里程碑 |
 
@@ -138,9 +155,12 @@ decision.scene
 
 ```
 ✅ 契约已生成（{模式} 模式）
-· 资金池 ¥{corpus} · 月度净流入 ¥{monthly_contribution}
-· 目标：{objectives[0].name}（¥{target_amount}，{deadline}）...
+· 资金池 {symbol}{corpus} {currency} · 月度净流入 {symbol}{monthly_contribution} {currency}
+· 目标：{objectives[0].name}（{symbol}{target_amount}，{deadline}）...
 ```
+
+- `currency` 非 CNY 时：金额用对应币种符号（USD→$ / EUR→€ / HKD→HK$ 等）
+- `currency=CNY`（默认）：符号用 ¥，不额外标注币种名（保持原样）
 
 - `warnings` 非空时逐条转述（⚠️ 前缀）
 - `rejected_objectives` 非空时转述被拒原因

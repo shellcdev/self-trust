@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
+from . import crypto as crypto_io
 from .models import Contract, FIELD_ZONES, CORE_GUARD_FIELDS, Zone
 
 ENV_DATA_DIR = "SELFTRUST_DATA_DIR"
@@ -83,12 +84,18 @@ def contract_exists(data_dir: Path) -> bool:
 
 
 def read_contract(data_dir: Path) -> dict[str, Any]:
-    """读契约；不存在则 FileNotFoundError（显式，不返回空契约假装存在）。"""
+    """读契约；不存在则 FileNotFoundError（显式，不返回空契约假装存在）。
+
+    透明解密：文件为加密格式（crypto.is_encrypted）→ 用 session 密钥材料解密；
+    否则明文 json.loads（向后兼容旧契约）。加密契约但 session 未设密钥 → CryptoError。
+    """
     path = contract_path(data_dir)
     if not path.is_file():
         raise FileNotFoundError(f"契约不存在: {path}（请先运行 init）")
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    raw = path.read_bytes()
+    if crypto_io.is_encrypted(raw):
+        return crypto_io.unseal_json(raw)
+    return json.loads(raw.decode("utf-8"))
 
 
 def _validate_zones(new: dict[str, Any], old: Optional[dict[str, Any]],
@@ -136,8 +143,8 @@ def write_contract(
     path = contract_path(data_dir)
     old: Optional[dict[str, Any]] = None
     if path.is_file():
-        with open(path, "r", encoding="utf-8") as f:
-            old = json.load(f)
+        # 旧契约读取走 read_contract（自动解密加密契约）；明文契约原样返回
+        old = read_contract(data_dir)
     elif not allow_create:
         raise FileNotFoundError(f"契约不存在: {path}（请先运行 init）")
 
@@ -148,8 +155,19 @@ def write_contract(
 
     data_dir.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(contract, f, ensure_ascii=False, indent=2)
+    # 透明加密：契约 crypto.enabled → 用 session 密钥材料密封为字节；否则明文 JSON
+    # 注：旧契约读取须走 read_contract（自动解密），不可明文 json.load，否则加密契约
+    # 二次写入时读旧值会触发 utf-8 解码错误。
+    if contract.get("crypto", {}).get("enabled"):
+        if not crypto_io.have_session():
+            raise crypto_io.CryptoError(
+                "契约已启用加密，写入需密钥材料：--pass / --key-file 或对应环境变量")
+        blob = crypto_io.seal_json(contract)
+        with open(tmp, "wb") as f:
+            f.write(blob)
+    else:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(contract, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
     return path
 

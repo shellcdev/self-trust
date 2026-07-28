@@ -1,5 +1,54 @@
 # CHANGELOG — self-trust
 
+## [0.7.14] - 2026-07-28
+
+### Feature（静态加密开关 — 方案 C：passphrase + key-file 双路线，opt-in 默认关）
+
+**问题**：本地账本（资产/负债/消费习惯）明文存 `<home>/.claw/self-trust/`，可能被云同步（OneDrive/iCloud/百度网盘）误带上云；个人完整财务画像泄露风险。
+
+**新增 `core/crypto.py`**（可选依赖 `cryptography`，非加密路径纯标准库零依赖）：
+- AES-256-GCM（AEAD，认证加密防篡改）+ `passphrase` → PBKDF2-HMAC-SHA256（20 万轮）派生密钥；
+- 两种密钥路线：`passphrase`（用户密码，每次 `--pass`，密钥不落盘）/ `key-file`（自动生成 `<data-dir>/.self-trust.key` 权限 600，无感）；
+- 文件格式 `MAGIC(STENC1\n) + 模式字节(P/K) + salt(仅 P) + nonce(12) + ct`；`is_encrypted` 魔数检测；
+- 模块级 `session`（`set_session`/`reset_session`）+ `audit_encrypted` 标志，存储层透明加解密；
+- `InvalidPassphrase`（GCM tag 校验失败）/ `CryptoUnavailable`（未装 cryptography）错误类型；缺依赖时返回清晰可操作提示。
+
+**存储层透明集成**：
+- `contract.py`：`read_contract` 检测魔数→解密；`write_contract` 按 `crypto.enabled` 密封；旧契约读走 `read_contract`（自动解密，修复二次写入 utf-8 解码坑）；
+- `audit.py`：`append`/`read_all` 按魔数/标志加解密，`audit/*.jsonl` 整文件加密追加（个人单机场景）；
+- `models.py`：Contract 新增 `crypto` 字段（CONFIG 区，引擎只读，默认 `{"enabled": false, "mode": "passphrase", ...}`）。
+
+**CLI/初始化**：
+- 全局 `--pass` / `--key-file`（须置于子命令前），环境变量 `SELFTRUST_PASS` / `SELFTRUST_KEY_FILE` 回退；
+- `init --encrypt [--crypto-mode passphrase|keyfile]`（默认关）；keyfile 模式自动生成密钥文件并写入 `crypto.key_file`、回执附 ⚠️ 丢失告警；
+- `_configure_crypto`：非 init 命令按现有契约 `crypto.enabled` 设置审计加密标志，keyfile 模式自动定位 `<data-dir>/.self-trust.key`；
+- `main` 捕获 `CryptoError`（退出码 5：缺密钥/密码错误）。
+
+**文档**：SKILL.md 依赖说明 + 全局参数 + init 命令 + 状态（358 测试）；init.md §4 加密开关全流程；contract-schema.md `crypto` 字段；STATUS.md 同步。
+
+**向后兼容**：无魔数头的旧明文契约/审计日志原样直读；未启用加密时全链路零改动、零依赖。
+
+## [0.7.13] - 2026-07-28
+
+### Feature（多币种支持 — Level A+B）
+
+**Level A：显示币种可配**
+- `Contract` 新增 `currency: str = "CNY"` 字段（CONFIG 区，引擎只读）；
+- `CURRENCY_SYMBOLS` 映射：CNY→¥ / USD→$ / EUR→€ / GBP→£ / HKD→HK$ / JPY→¥ / SGD→S$ / AUD→A$ / CAD→C$；
+- `currency_symbol()` 辅助函数（未知币种回退到 code 本身）；
+- `init --currency USD` 可选参数（默认 CNY，小写自动转大写）；
+- 向后兼容：旧契约无 `currency` 字段 → `from_dict` 回退默认 CNY。
+
+**Level B：多币种录入（judge --currency / --rate）**
+- `judge()` / `submit()` 新增 `currency` + `exchange_rate` 参数；
+- 非 CNY 消费：`amount_cny = original_amount * rate`，判定在换算后金额上运行；
+- 缺失/无效汇率 → `missing_rate` 错误（exit code 1）；CNY 透传：`original_amount=null`（向后兼容）；
+- 落盘记录：`pending_spends`（amount 原始 / amount_base 换算 / currency / exchange_rate / base_currency）、`pending_requests`（同上 + original_amount / original_currency）、`approval_log`（F8 快照：顶层 original_amount / original_currency / exchange_rate / base_currency）。
+
+**文档同步**：`rendering.md` §0.4 多币种渲染规则（双显原始+换算金额，符号取 base_currency）+ 错误表新增 `missing_rate` + init 渲染支持非 ¥ 符号；`interaction.md` §8 多币种消费识别（符号/中文→币种代码，汇率须用户提供不估算）；`contract-schema.md` 三区权限表+字段速查新增 `currency`；`SKILL.md` 命令表 init/judge 标注 `--currency`/`--rate`。
+
+**测试**：新增 `test_currency.py`（18 例，CNY 透传/USD 换算判定一致/缺汇率报错/零负汇率报错/contract.currency 存储/submit 落盘币种信息/冷静期币种信息/审计快照币种信息），343 → 358 全绿。
+
 ## [0.7.12] - 2026-07-28
 
 ### Docs（交互优化 — 自然语言→引擎命令预处理规则）

@@ -1,5 +1,11 @@
 # CHANGELOG — self-trust
 
+## [0.7.16] - 2026-07-28
+
+### Docs（SKILL.md 加密用法段落补全）
+
+静态加密（密码）功能在 `[0.7.14]` 已实装，但 SKILL.md 此前仅在 init 表 / 全局参数 / 退出码 / 依赖四处散点提及，缺一段可直接照用的「密码工作流」。本次在「全局参数」之后新增「静态加密（密码）用法」小节：两条密钥路线（passphrase / key-file）语义、启用命令（`init --encrypt --crypto-mode ...`）、启用后每次命令带 `--pass`/`--key-file`（须置于子命令前）、缺密钥 exit 5、切换状态需 `reset --confirm` + 重 `init`。同步 `.workbuddy` 副本。无代码改动。
+
 ## [0.7.15] - 2026-07-28
 
 ### Hardening（落盘健壮性三层加固 — 防「写盘 bug 复现」）

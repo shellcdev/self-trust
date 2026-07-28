@@ -58,6 +58,30 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 - `--pass <密码>` / `--key-file <路径>`：加密契约密钥（passphrase / key-file 二选一，须置于子命令前）；亦可用环境变量 `SELFTRUST_PASS` / `SELFTRUST_KEY_FILE`；非加密契约无需传；
 - 输出恒为 JSON（`--json` 为默认且唯一格式）；失败时 `{"ok": false, "error": ..., "message": ...}` + 非零退出码（2=not_found / 3=guard 权限违规 / 4=invalid 参数 / **5=crypto 加密（缺密钥或密码错误）** / **6=contract_corrupted 契约损坏（拼接/截断 JSON，见 `.bak.corrupt` 恢复，勿重跑）**）。
 
+## 静态加密（密码）用法
+
+opt-in，**默认关**。启用后本地契约（`contract.json`）与审计日志（`audit/*.jsonl`）以 AES-256-GCM 加密落盘；非加密契约行为完全不变，向后兼容。
+
+**两条密钥路线（初始化时一次性决定，之后不可原地切换）**
+- `passphrase`（默认）：用户口令，每次命令前传 `--pass <密码>`（或环境变量 `SELFTRUST_PASS`）。密钥由口令经 PBKDF2-HMAC-SHA256（20 万轮）派生，**从不写入磁盘**——无口令即无法解密。
+- `key-file`：首次 `init --encrypt --crypto-mode keyfile` 自动生成 `<data-dir>/.self-trust.key`（权限 600），后续命令**自动定位、无需每次传参**；但密钥文件丢失 = 数据永久不可解密，务必单独备份。
+
+**启用（仅初始化时可开）**
+```
+python scripts/cli.py init --corpus 200000 --monthly 8000 --encrypt --crypto-mode passphrase
+python scripts/cli.py init --corpus 200000 --monthly 8000 --encrypt --crypto-mode keyfile
+```
+
+**启用后，每次命令都要带密钥**（全局参数，须置于子命令之前）
+```
+python scripts/cli.py --pass <密码> judge --amount 100 --category 食品
+python scripts/cli.py --key-file <路径> report
+```
+- 缺密钥 / 口令错误 → 退出码 5（`error=crypto`）；引擎返回清晰提示，不会静默用明文读写。
+- 切换加密状态（开→关 / 换路线）：需 `reset --confirm` 后重新 `init`，现有契约不原地改密。
+
+详细机制与恢复：references/init.md §4；可选依赖 `cryptography` 见上方「依赖」。
+
 ## references 加载路由（按需读，别全读）
 
 | 用户动作 | 读 |

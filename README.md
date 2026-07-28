@@ -1,5 +1,7 @@
 # self-trust — 个人自律记账 / 资金池自我治理 skill
 
+> English version: [README_EN.md](README_EN.md)
+
 ![tests](https://github.com/shellcdev/self-trust/actions/workflows/tests.yml/badge.svg)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)

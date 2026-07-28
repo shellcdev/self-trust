@@ -6,9 +6,9 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 # self-trust（自律记账引擎）
 
 规则引擎是**确定性 Python 代码**，不是 AI。你（LLM）只做三件事：
-1. 解析用户自然语言意图 → 映射到下方命令；
+1. 解析用户自然语言意图 → **按 `references/interaction.md` 预处理**（类目映射/金额解析/planned 推断/request_id 继承）→ 映射到下方命令；
 2. 调 `scripts/cli.py` 对应子命令（**一律输出结构化 JSON**：判定 + 全部中间变量）；
-3. 把引擎 JSON 润色成意见书/回执（措辞放开，数字锁死）。
+3. 把引擎 JSON 润色成意见书/回执（措辞放开，数字锁死）——**渲染规则见 `references/rendering.md`**（全场景模板选择 + 字段映射 + 省略清单 + 错误渲染），文案骨架见 `templates/`。
 
 ## 铁律（不可违反）
 
@@ -19,6 +19,8 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 5. **性质声明**：涉及"信托/资产保护/法律"话题时，明确本工具无法律效力（§0）。
 
 ## 命令表（§9）
+
+> **交互预处理**（类目映射 / 金额解析 / planned 推断 / request_id 上下文继承 / 多笔拆分 / 引导初始化）见 `references/interaction.md`——调引擎前先按规则消解模糊性。
 
 | 用户说 | 引擎命令（用途 + 最小调用） | 参考 |
 |---|---|---|
@@ -59,17 +61,23 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 
 | 用户动作 | 读 |
 |---|---|
-| 日常小额审批（最高频） | ——（引擎 JSON 自带判定+文案要素，本文件铁律足够渲染） |
-| 审批有分歧/冷静期/白名单 | references/approval.md |
-| 申诉/覆写/护栏修改/重置（低频） | references/exceptions.md |
-| 初始化/演示 | references/init.md |
-| 报表/校准/奖励/目标生命周期/日志 | references/report.md |
-| 切模式/切数据源/对账 | references/data-modes.md |
+| **用户交互预处理（所有命令）** | **references/interaction.md**（上下文继承 + 类目映射 + 引导初始化 + 金额解析 + planned 推断 + 主动提醒 + 多笔审批） |
+| **输出渲染（所有命令）** | **references/rendering.md**（全场景模板选择 + 字段映射 + 省略清单 + 错误渲染） |
+| 日常小额审批（最高频） | rendering.md §1 + templates/opinion.md 场景 A-1/A-2 |
+| 审批有分歧/冷静期/白名单 | references/approval.md + templates/opinion.md（全场景） |
+| 申诉/覆写/护栏修改/重置（低频） | references/exceptions.md + rendering.md §9/§10 |
+| 初始化/演示 | references/init.md + rendering.md §3/§4 |
+| 报表/校准/奖励/目标生命周期/日志 | references/report.md + templates/report.md + rendering.md §5/§6/§7/§8 |
+| 切模式/切数据源/对账 | references/data-modes.md + rendering.md §10 |
 | schema/权限排障 | references/contract-schema.md |
+
+> **渲染优先级**：引擎 JSON → rendering.md 选模板/规则 → templates/ 填占位 → 输出用户可见文本。
+> rendering.md 是「什么场景用什么模板 + 通用规则」的权威源；templates/ 是具体文案骨架。
 
 ## 模板
 
-- 意见书（驳回/附条件强制三段式）：templates/opinion.md
+- 审批意见书（全场景 A/B/C + 撤回激励 + 字段速查表）：templates/opinion.md
+- 记账报表（五段式 + 渲染决策树 + 省略清单）：templates/report.md
 - 三场景演示：templates/demo.md
 
 ## 状态

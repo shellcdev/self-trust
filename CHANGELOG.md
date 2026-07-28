@@ -1,5 +1,53 @@
 # CHANGELOG — self-trust
 
+## [0.7.12] - 2026-07-28
+
+### Docs（交互优化 — 自然语言→引擎命令预处理规则）
+
+**问题**：SKILL.md 命令表定义了引擎接口，但用户自然语言到命令之间有 7 个预处理缺口——request_id 记忆负担（用户不会报哈希）、类目自由文本导致报表碎片化、初始化无引导流程、中文金额无解析规则、planned 标记无推断规则、冷静期不主动提醒、多笔审批无处理策略。
+
+**新增文件**：
+- `references/interaction.md` — 7 条交互规则：
+  1. **上下文继承**：同会话用上一轮 request_id / 描述特征跑 reminders 匹配 / 渲染时附带记忆锚点 `编号{id}（{category} ¥{amount}）`
+  2. **类目模糊映射**：14 组常见口语词→23 标准类目映射表（吃饭→食品、打车→交通…），命中静默归一、未命中轻提示
+  3. **引导式初始化**：三步 onboarding（资金池→月结余→目标），缺项只问缺的
+  4. **金额自然语言解析**：中文数字/简写→阿拉伯数字（六千→6000、1.2w→12000）
+  5. **planned 标记推断**：周期性支出→--planned / 冲动信号→不加 / 不确定→保守不加
+  6. **主动冷静期提醒**：会话开场/审批后主动跑 reminders 检查 pending，空时不刷存在感
+  7. **多笔审批**：逐笔 judge + 汇总渲染，超 5 笔建议分批
+
+**更新文件**：
+- `SKILL.md` — 加载路由表新增 interaction.md 为「用户交互预处理（所有命令）」首行；命令表前加交互预处理提示；第 1 步「解析意图」指向 interaction.md
+- `STATUS.md` — references+templates 行追加交互优化记录、下一步追加 #9 已完成项
+
+**不变**：引擎代码（scripts/）零改动，325 测试全绿；interaction.md 为纯文档层预处理规则，不影响 CLI JSON 输出结构。
+
+## [0.7.11] - 2026-07-28
+
+### Docs（输出渲染优化 — 全场景模板 + 统一渲染指南）
+
+**问题**：原渲染指引散落在 SKILL.md（3 条铁律 + 1 行基调）和 templates/opinion.md（仅覆盖 Scene C 驳回），最高频的 Scene A 批准（含冷静期变体）无模板、报表无渲染模板、字段映射缺失、错误输出无渲染规则、withdraw 撤回激励文案引用了错误字段路径（`F5提前月数` 而非 `feedback.ahead_months_simple`）。
+
+**新增文件**：
+- `references/rendering.md` — 统一渲染指南（全场景模板选择决策树 + 通用数字格式/误差披露/性质声明规则 + 错误码→用户提示映射表 + 冷静期生命周期渲染 + init/demo/calibrate/reward/log/appeal/customize/reconcile/reset/import 全命令渲染模板 + show vs omit 字段选择清单 + 全命令速查表）
+- `templates/report.md` — 记账报表渲染模板（五段式：头部概览/目标进度/趋势图/冷静期挂起/备注提示 + 渲染决策树 + 省略清单 + 字段速查表）
+
+**重写文件**：
+- `templates/opinion.md` — 从仅覆盖 Scene C 扩展为全场景：
+  - A-1 无冷静期直接放行（最高频）
+  - A-2 触发冷静期批准（最常见非平凡场景）
+  - A-3 白名单极速放行
+  - B 附条件（含分期方案推导规则）
+  - C 驳回三段式 + C-融资购房特殊驳回
+  - 撤回激励文案（修正字段路径为 `feedback.*`）
+  - JSON 字段 → 占位符速查表（judge submit + withdraw 两套）
+
+**更新文件**：
+- `SKILL.md` — 加载路由表新增 rendering.md 为渲染权威源、日常小额审批路由从「本文件铁律足够」改为指向 rendering.md §1 + opinion.md A-1/A-2；模板列表新增 report.md；第 3 步「润色」指向 rendering.md
+- `STATUS.md` — SKILL.md+references+templates 行追加渲染优化记录、下一步追加 #8 已完成项
+
+**不变**：引擎代码（scripts/）零改动，325 测试全绿不受影响；rendering.md/templates 均为文档层，不影响 CLI JSON 输出结构。
+
 ## [0.7.10] - 2026-07-28
 
 ### Fixed（第三轮扫描 N1–N5 / R1–R3 修复）

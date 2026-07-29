@@ -37,7 +37,7 @@ from modules import report as mod_report     # noqa: E402
 from modules import reward as mod_reward     # noqa: E402
 from modules import import_asset as mod_import  # noqa: E402
 
-import renderer as rdr  # noqa: E402
+from render import renderer as rdr  # noqa: E402
 
 
 def _resolve_subcmd(args: argparse.Namespace | None) -> str:

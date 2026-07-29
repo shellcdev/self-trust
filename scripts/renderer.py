@@ -246,24 +246,53 @@ def _render_init(r: dict, ts: str) -> str:
 # ── §4 演示 ──────────────────────────────────────────────────────
 
 def _render_demo(r: dict, ts: str) -> str:
+    demo_defaults = r.get("demo_defaults_used", True)
     lines = [
         _header("✅", "演示·已生成", ts),
         SEP,
-        "⚠️ 演示数据，非您的真实契约",
     ]
+    # 警告行：区分合成默认 vs 真实契约参数
+    if demo_defaults:
+        lines.append("⚠️ 演示数据（场景为合成，基于默认参数），非真实审批")
+    else:
+        # 真实契约参数：展示资金池/月净流入（原样引用，不心算）
+        ep = r.get("engine_params", {})
+        corpus = ep.get("corpus")
+        monthly = ep.get("monthly_contribution")
+        param_hint = ""
+        if corpus is not None and monthly is not None:
+            param_hint = f"（基于你真实契约：资金池 {_fmt(corpus)} / 月净流入 {_fmt(monthly)}）"
+        lines.append(f"⚠️ 演示数据（场景为合成{param_hint}），非真实审批")
+
+    # 三场景列表（含金额 + 目标影响）
     scenes = r.get("scenarios", [])
     for s in scenes:
         label = s.get("label", "")
         scene = s.get("scene", "")
         days = s.get("cooling_days", 0)
+        amt = s.get("amount")
+        amt_str = f" {_fmt(amt)}" if amt is not None else ""
+        delay = s.get("delay_months_simple")
+        impact_str = ""
+        if delay is not None and delay > 0:
+            impact_str = f"  · 目标延后约 {delay:.1f} 个月（简化口径）"
         if scene == "A":
-            lines.append(f"· {label} → 批准（无冷静期）")
+            lines.append(f"· {label}{amt_str} → 批准（无冷静期）{impact_str}")
         elif scene == "B":
-            lines.append(f"· {label} → 附条件（{days}天冷静期）")
+            lines.append(f"· {label}{amt_str} → 批准（触发 {days} 天冷静期）{impact_str}")
         else:
-            lines.append(f"· {label} → 驳回（冷却）")
-    lines.append("这是演示，不影响真实账户；现在可以说『审查：买X花Y』开始真实审批")
-    lines.append(SEP)
+            lines.append(f"· {label}{amt_str} → 驳回（冷却）{impact_str}")
+            alt = r.get("alt_plan_scenario3")
+            if alt:
+                m = alt.get("months")
+                pm = alt.get("per_month")
+                if m is not None and pm is not None:
+                    lines.append(f"  · 替代方案：{int(m)} 期 / 每期 {_fmt(pm)}（单笔不超冷静期阈值、不击穿安全垫）")
+
+    # 上下文行（--- 分隔线后）
+    lines.append("---" + "-" * 41)
+    lines.append("这是演示，不影响真实账户（干跑不落账目、不入冷静期队列、不写审计）；")
+    lines.append("现在可以说「审查：买X花Y」开始真实审批。")
     return "\n".join(lines)
 
 

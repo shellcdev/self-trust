@@ -37,12 +37,31 @@ from modules import report as mod_report     # noqa: E402
 from modules import reward as mod_reward     # noqa: E402
 from modules import import_asset as mod_import  # noqa: E402
 
+import renderer as rdr  # noqa: E402
 
-def _emit(payload: dict, code: int = 0) -> int:
+
+def _resolve_subcmd(args: argparse.Namespace | None) -> str:
+    """从 argparse namespace 中提取子命令（action/action，judge默认submit）。"""
+    if args is None:
+        return ""
+    action = getattr(args, "action", None)
+    if action:
+        return action
+    return ""
+
+
+def _emit(payload: dict, code: int = 0,
+          args: argparse.Namespace | None = None) -> int:
     # Windows 控制台可能默认 GBK，强制 UTF-8 防中文/符号编码失败（跨平台一致）
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    cmd = args.command if args and getattr(args, "text", False) else ""
+    sub = _resolve_subcmd(args) if cmd else ""
+    if cmd:
+        text = rdr.render(payload, cmd, sub)
+        sys.stdout.write(text + "\n")
+    else:
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
     return code
 
 
@@ -146,7 +165,7 @@ def cmd_init(args) -> int:
         encrypt=args.encrypt,
         crypto_mode=args.crypto_mode,
     )
-    return _emit(result, 0 if result.get("ok") else 1)
+    return _emit(result, 0 if result.get("ok") else 1, args)
 
 
 def cmd_judge(args) -> int:
@@ -155,7 +174,7 @@ def cmd_judge(args) -> int:
     if action == "submit":
         if args.amount is None or args.category is None:
             return _emit({"ok": False, "error": "invalid",
-                          "message": "judge 提交须提供 --amount 与 --category"}, 4)
+                          "message": "judge 提交须提供 --amount 与 --category"}, 4, args)
         result = mod_judge.submit(
             data_dir, amount=args.amount, category=args.category,
             planned=args.planned, today=_today(args),
@@ -180,7 +199,7 @@ def cmd_judge(args) -> int:
                   mod_judge.list_due_reminders(contract, today=_today(args))}
     else:  # pragma: no cover - argparse choices 已限制
         result = {"ok": False, "error": "invalid", "message": f"未知 action {action}"}
-    return _emit(result, 0 if result.get("ok") else 1)
+    return _emit(result, 0 if result.get("ok") else 1, args)
 
 
 def cmd_demo(args) -> int:
@@ -189,7 +208,7 @@ def cmd_demo(args) -> int:
     contract = (contract_io.read_contract(data_dir)
                 if contract_io.contract_exists(data_dir) else None)
     result = mod_init.demo_scenarios(contract, today=_today(args))
-    return _emit(result, 0 if result.get("ok") else 1)
+    return _emit(result, 0 if result.get("ok") else 1, args)
 
 
 def cmd_report(args) -> int:
@@ -197,7 +216,7 @@ def cmd_report(args) -> int:
     # §5.4 冷却窗懒惰终裁：报表交互时扫描过期项自动生效（复用 §5.1 范式）
     mod_customize.sweep_pending_config(data_dir)
     result = mod_report.run_report(data_dir, today=_today(args))
-    return _emit(result, 0 if result.get("ok") else 1)
+    return _emit(result, 0 if result.get("ok") else 1, args)
 
 
 def cmd_reconcile(args) -> int:
@@ -206,13 +225,13 @@ def cmd_reconcile(args) -> int:
         data_dir, corpus=args.corpus, income=args.income,
         invest=args.invest, living=args.living, impulse=args.impulse,
         today=_today(args))
-    return _emit(result, 0 if result.get("ok") else 1)
+    return _emit(result, 0 if result.get("ok") else 1, args)
 
 
 def cmd_calibrate(args) -> int:
     data_dir = contract_io.resolve_data_dir(args.data_dir)
     result = mod_cal.run_calibrate(data_dir, today=_today(args), force=args.force)
-    return _emit(result, 0 if result.get("ok") else 1)
+    return _emit(result, 0 if result.get("ok") else 1, args)
 
 
 def cmd_reward(args) -> int:
@@ -225,11 +244,11 @@ def cmd_reward(args) -> int:
     else:  # claim
         if args.objective is None or args.amount is None:
             return _emit({"ok": False, "error": "invalid",
-                          "message": "claim 须提供 --objective 与 --amount"}, 4)
+                          "message": "claim 须提供 --objective 与 --amount"}, 4, args)
         result = mod_reward.claim_reward(
             data_dir, objective=args.objective, amount=args.amount,
             purpose=args.purpose or "", today=_today(args))
-    return _emit(result, 0 if result.get("ok") else 1)
+    return _emit(result, 0 if result.get("ok") else 1, args)
 
 
 def cmd_reset(args) -> int:
@@ -240,7 +259,7 @@ def cmd_reset(args) -> int:
         monthly_contribution=args.monthly,
         objectives=objectives or None, reason=args.reason or "",
         today=_today(args))
-    return _emit(result, 0 if result.get("ok") else 1)
+    return _emit(result, 0 if result.get("ok") else 1, args)
 
 
 def cmd_appeal(args) -> int:
@@ -253,7 +272,7 @@ def cmd_appeal(args) -> int:
         result = mod_gov.appeal(
             data_dir, request_id=args.request_id, reason=args.reason or "",
             today=_today(args))
-    return _emit(result, 0 if result.get("ok") else 1)
+    return _emit(result, 0 if result.get("ok") else 1, args)
 
 
 def cmd_objective(args) -> int:
@@ -261,14 +280,14 @@ def cmd_objective(args) -> int:
     result = mod_cal.transition_objective(
         data_dir, args.name, args.to, confirm=args.confirm,
         today=_today(args))  # N3：传递逻辑 today，审计时间对齐
-    return _emit(result, 0 if result.get("ok") else 1)
+    return _emit(result, 0 if result.get("ok") else 1, args)
 
 
 def cmd_log(args) -> int:
     data_dir = contract_io.resolve_data_dir(args.data_dir)
     records = audit_io.read_all(data_dir, args.name)
     return _emit({"ok": True, "log": args.name,
-                  "count": len(records), "records": records})
+                  "count": len(records), "records": records}, args)
 
 
 def cmd_customize(args) -> int:
@@ -276,23 +295,23 @@ def cmd_customize(args) -> int:
     # 冷却窗复查（先懒惰扫描过期项自动生效，再列待决 + 二次提醒）
     if args.review:
         result = mod_customize.review_config(data_dir)
-        return _emit(result, 0 if result.get("ok") else 1)
+        return _emit(result, 0 if result.get("ok") else 1, args)
     # 冷却窗撤回（窗内无理由撤回）
     if args.withdraw:
         if not args.request_id or not args.token:
             return _emit({"ok": False, "error": "invalid",
-                          "message": "--withdraw 须同时带 --request-id 与 --token（撤回 token）"}, 4)
+                          "message": "--withdraw 须同时带 --request-id 与 --token（撤回 token）"}, 4, args)
         result = mod_customize.withdraw_config(data_dir, args.request_id, args.token)
-        return _emit(result, 0 if result.get("ok") else 1)
+        return _emit(result, 0 if result.get("ok") else 1, args)
     # 预览 / 应用（§5.4 二次确认；削弱自身进冷却窗）
     try:
         changes = mod_customize.build_changes(args)
     except ValueError as e:
-        return _emit({"ok": False, "error": "invalid", "message": str(e)}, 4)
+        return _emit({"ok": False, "error": "invalid", "message": str(e)}, 4, args)
     result = mod_customize.apply(
         data_dir, changes, confirm=args.confirm, token=args.token,
         reason=args.reason or "")
-    return _emit(result, 0 if result.get("ok") else 1)
+    return _emit(result, 0 if result.get("ok") else 1, args)
 
 
 def cmd_import_asset(args) -> int:
@@ -303,7 +322,7 @@ def cmd_import_asset(args) -> int:
     if args.confirm:
         if not args.token:
             return _emit({"ok": False, "error": "invalid",
-                          "message": "confirm 须带 --token（stage 返回）"}, 4)
+                          "message": "confirm 须带 --token（stage 返回）"}, 4, args)
         corrections: dict[str, Any] = {}
         if args.corpus is not None:
             corrections["corpus"] = args.corpus
@@ -324,16 +343,16 @@ def cmd_import_asset(args) -> int:
                 "applied": result.get("applied"),
                 "reason": "第三方资产人工核对确认（§7.3）",
             })
-        return _emit(result, 0 if result.get("ok") else 1)
+        return _emit(result, 0 if result.get("ok") else 1, args)
 
     if args.cancel:
         if not args.token:
             return _emit({"ok": False, "error": "invalid",
-                          "message": "cancel 须带 --token（stage 返回）"}, 4)
+                          "message": "cancel 须带 --token（stage 返回）"}, 4, args)
         result = mod_import.cancel_import(contract, args.token)
         if result.get("ok"):
             contract_io.write_contract(data_dir, contract, actor="configurator", confirm=True)
-        return _emit(result, 0 if result.get("ok") else 1)
+        return _emit(result, 0 if result.get("ok") else 1, args)
 
     # —— 发起导入（stage）——
     if args.balances:
@@ -366,13 +385,13 @@ def cmd_import_asset(args) -> int:
         }
     else:
         return _emit({"ok": False, "error": "invalid",
-                      "message": "须提供 --balances <csv> 或 --corpus <X> 以发起导入"}, 4)
+                      "message": "须提供 --balances <csv> 或 --corpus <X> 以发起导入"}, 4, args)
 
     result = mod_import.stage_import(
         contract, candidates, args.source or "manual", today=_today(args))
     if result.get("ok"):
         contract_io.write_contract(data_dir, contract, actor="configurator", confirm=True)
-    return _emit(result, 0 if result.get("ok") else 1)
+    return _emit(result, 0 if result.get("ok") else 1, args)
 
 
 def _now_import() -> str:
@@ -387,7 +406,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--data-dir", default=None,
                    help="数据目录（优先级：本参数 > SELFTRUST_DATA_DIR > <home>/.claw/self-trust/）")
     p.add_argument("--json", action="store_true", default=True,
-                   help="结构化 JSON 输出（默认且唯一格式）")
+                   help="结构化 JSON 输出（默认格式）")
+    p.add_argument("--text", action="store_true",
+                   help="文本渲染输出（§0.5 骨架，带分隔线 + 时间戳）")
     p.add_argument("--today", default=None,
                    help="覆盖当前日期 YYYY-MM-DD（测试/重放用）")
     p.add_argument("--pass", dest="pass_", default=None,
@@ -559,17 +580,17 @@ def main(argv: list[str] | None = None) -> int:
         _configure_crypto(args)
         return args.func(args)
     except FileNotFoundError as e:
-        return _emit({"ok": False, "error": "not_found", "message": str(e)}, 2)
+        return _emit({"ok": False, "error": "not_found", "message": str(e)}, 2, args)
     except GuardError as e:
-        return _emit({"ok": False, "error": "guard", "message": str(e)}, 3)
+        return _emit({"ok": False, "error": "guard", "message": str(e)}, 3, args)
     except crypto_io.CryptoError as e:
-        return _emit({"ok": False, "error": "crypto", "message": str(e)}, 5)
+        return _emit({"ok": False, "error": "crypto", "message": str(e)}, 5, args)
     except ContractCorruptedError as e:
         # 契约损坏（拼接/截断 JSON）：清晰指向 .bak.corrupt 恢复，不与 crypto 混淆
         return _emit({"ok": False, "error": "contract_corrupted",
-                      "message": str(e), "recover": str(e.path) + ".bak.corrupt"}, 6)
+                      "message": str(e), "recover": str(e.path) + ".bak.corrupt"}, 6, args)
     except (ValueError, TypeError) as e:
-        return _emit({"ok": False, "error": "invalid", "message": str(e)}, 4)
+        return _emit({"ok": False, "error": "invalid", "message": str(e)}, 4, args)
 
 
 if __name__ == "__main__":

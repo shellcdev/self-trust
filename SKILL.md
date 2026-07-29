@@ -1,6 +1,6 @@
 ---
 name: self-trust
-description: 个人自律记账/资金池自我治理：初始化契约、支取审批（§4.4 确定性判定）、冷静期、报表校准、审计留痕。触发词：记账/自律/审查。
+description: 个人自律记账/资金池自我治理：契约初始化、多币种支取审批（§4.4 确定性判定）、冷静期、融资购房、报表校准、奖惩/目标解锁、审计留痕，可选 AES-256-GCM 静态加密。触发词：记账/自律/审查。
 ---
 
 # self-trust（自律记账引擎）
@@ -8,7 +8,7 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 规则引擎是**确定性 Python 代码**，不是 AI。你（LLM）只做三件事：
 1. 解析用户自然语言意图 → **按 `references/interaction.md` 预处理**（类目映射/金额解析/planned 推断/request_id 继承）→ 映射到下方命令；
 2. 调 `scripts/cli.py` 对应子命令（**一律输出结构化 JSON**：判定 + 全部中间变量）；
-3. 把引擎 JSON 润色成意见书/回执（措辞放开，数字锁死）——**渲染规则见 `references/rendering.md`**（全场景模板选择 + 字段映射 + 省略清单 + 错误渲染），文案骨架见 `templates/`。
+3. 把引擎 JSON 润色成意见书/回执（措辞放开，数字锁死）——**渲染规则见 `references/rendering.md`**（全场景模板选择 + 字段映射 + 省略清单 + 错误渲染），字段速查见 `templates/`（仅字段名→JSON 路径映射，**格式一律以 `references/rendering.md` 为准，禁止照抄 templates/ 旧格式示例**）。（**渲染前必须先读 `references/rendering.md` 按 §1.1 选模板 + 套 §0.5 骨架；`templates/*.md` 仅作字段路径速查，禁止照抄其格式示例、禁止看 JSON 自编文案**）
 
 ## 铁律（不可违反）
 
@@ -17,6 +17,7 @@ description: 个人自律记账/资金池自我治理：初始化契约、支取
 3. **禁止写配置区**：契约核心参数（安全垫/目标/invest_ratio 等）修改必须走 §5.4 二次确认闸门；引擎/LLM 均无权静默改（§10.3 三区权限）。
 4. **误差披露**：简化口径（F5）数字须用「约/大约/估算」措辞，并附「长期目标以真实口径（F7）为准」（§2.0）。
 5. **性质声明**：涉及"信托/资产保护/法律"话题时，明确本工具无法律效力（§0）。
+6. **输出前必须读渲染契约，且按路由表重确认权威源**：每次发出本 skill 任意用户可见文本前，必须按上方「references 加载路由」表**实际打开**对应 `references/*.md`（渲染类必读 `rendering.md`，`templates/*.md` 仅作字段路径速查、不照抄其格式，预处理类读 `interaction.md`）；套 `rendering.md §0.5` 骨架输出。**禁止凭记忆作答，禁止把为 A 目的读过的文件当成 B 目的的权威源**——`interaction.md` 只管引擎前预处理，**不是渲染契约**；`templates/` 仅字段参考、**不是格式权威**；不得看 JSON 自编文案。
 
 ## 命令表（§9）
 
@@ -88,22 +89,23 @@ python scripts/cli.py --key-file <路径> report
 |---|---|
 | **用户交互预处理（所有命令）** | **references/interaction.md**（上下文继承 + 类目映射 + 引导初始化 + 金额解析 + planned 推断 + 主动提醒 + 多笔审批） |
 | **输出渲染（所有命令）** | **references/rendering.md**（全场景模板选择 + 字段映射 + 省略清单 + 错误渲染） |
-| 日常小额审批（最高频） | rendering.md §1 + templates/opinion.md 场景 A-1/A-2 |
-| 审批有分歧/冷静期/白名单 | references/approval.md + templates/opinion.md（全场景） |
+| 日常小额审批（最高频） | rendering.md §1 + §11（紧凑卡片 A-1/A-3；有冷静期回退 §1.4 长模板） |
+| 审批有分歧/冷静期/白名单 | references/approval.md + rendering.md §1.4（B/C 长模板） |
 | 申诉/覆写/护栏修改/重置（低频） | references/exceptions.md + rendering.md §9/§10 |
 | 初始化/演示 | references/init.md + rendering.md §3/§4 |
-| 报表/校准/奖励/目标生命周期/日志 | references/report.md + templates/report.md + rendering.md §5/§6/§7/§8 |
+| 报表/校准/奖励/目标生命周期/日志 | references/report.md + rendering.md §5/§6/§7/§8（templates/report.md 仅字段参考） |
 | 切模式/切数据源/对账 | references/data-modes.md + rendering.md §10 |
 | schema/权限排障 | references/contract-schema.md |
 
-> **渲染优先级**：引擎 JSON → rendering.md 选模板/规则 → templates/ 填占位 → 输出用户可见文本。
-> rendering.md 是「什么场景用什么模板 + 通用规则」的权威源；templates/ 是具体文案骨架。
+> **渲染优先级**：引擎 JSON → rendering.md 选模板/规则（套 §0.5 骨架）→ 输出用户可见文本；`templates/` 仅字段路径速查，不参与格式。
+> rendering.md 是输出格式**唯一权威源**；`templates/` 仅作字段映射速查（字段名→JSON 路径），不得照抄其旧格式示例。
+> ⚠️ **硬约束（每次输出前）**：按本表「用户动作 → 读」**重查并实际打开**对应文件，**不依赖记忆、不复用为其他目的读过的文件**；渲染类输出一律走 `rendering.md`（templates/ 仅字段参考），预处理类走 `interaction.md`。
 
-## 模板
+## 模板（仅字段映射速查，格式见 rendering.md）
 
-- 审批意见书（全场景 A/B/C + 撤回激励 + 字段速查表）：templates/opinion.md
-- 记账报表（五段式 + 渲染决策树 + 省略清单）：templates/report.md
-- 三场景演示：templates/demo.md
+- 审批意见书字段速查（全场景 A/B/C + 撤回激励）：templates/opinion.md —— **格式见 rendering.md §1/§1.4/§11，勿照抄旧示例**
+- 记账报表字段速查（五段式 + 渲染决策树 + 省略清单）：templates/report.md —— **格式见 rendering.md §5，勿照抄旧示例**
+- 三场景演示字段速查：templates/demo.md —— **格式见 rendering.md §4，勿照抄旧示例**
 
 ## 状态
 

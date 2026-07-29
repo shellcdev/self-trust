@@ -24,7 +24,7 @@ python scripts/cli.py judge --amount <元> --category <类目> [--planned]
 
 ## 2. 意见书渲染
 
-驳回/附条件强制三段式（templates/opinion.md）：契约对照 → 目标影响 → 替代方案。
+驳回/附条件强制三段式（**格式见 `references/rendering.md` §1.4**）：契约对照 → 目标影响 → 替代方案。
 措辞基调：「不是不让你花，是帮你算清代价后选更好的花法」（§5.3）。
 
 ## 3. 冷静期生命周期（§5.1）——已实装

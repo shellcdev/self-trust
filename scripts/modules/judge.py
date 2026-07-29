@@ -681,6 +681,8 @@ def expire(data_dir: Path, request_id: str | None = None,
             "approved" if dst == RequestStatus.DECIDED else "expired")  # M4 台账联动
         processed.append({"request_id": entry["request_id"],
                           "final_status": dst.value,
+                          "amount": entry.get("amount"),
+                          "category": entry.get("category", ""),
                           "decision": entry.get("decision")})
         audit_records.append({
             "time": audit_io.now_iso(today),   # M1

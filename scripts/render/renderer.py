@@ -112,7 +112,6 @@ def _render_judge_submit(r: dict, ts: str) -> str:
     elif scene == "C":
         lines.append(f"契约对照：{summary}")
         lines.append(f"目标影响：{obj_name or '目标'} 延后约 {_fmt_months(delay_simple)}（简化口径，误差 ±20%~50%）")
-        lines.append(f"替代方案：{summary}")
     else:
         # A-2
         lines.append(f"契约对照：{summary}")
@@ -124,7 +123,7 @@ def _render_judge_submit(r: dict, ts: str) -> str:
         if expire_at and request_id:
             lines.append(f"冷静期 {days} 天，到期 {expire_at}（编号 {request_id}）")
         else:
-            lines.append(f"冷静期 {days} 天，到期终裁（§5.1）")
+            lines.append(f"冷静期 {days} 天，到期终裁（§2.3）")
 
     lines.append(SEP)
     return "\n".join(lines)
@@ -135,7 +134,6 @@ def _render_judge_submit(r: dict, ts: str) -> str:
 def _render_judge_withdraw(r: dict, ts: str) -> str:
     fb = r.get("feedback", {})
     amount = fb.get("withdrawn_amount", 0)
-    category = r.get("", "")
     rid = r.get("request_id", "")
     obj = fb.get("objective") or "你的长期目标"
     ahead_simple = fb.get("ahead_months_simple", 0)
@@ -269,7 +267,7 @@ def _render_demo(r: dict, ts: str) -> str:
     for s in scenes:
         label = s.get("name", "")
         scene = s.get("scene", "")
-        days = s.get("cooling_days", 0)
+        days = s.get("cooldown_days", 0)
         amt = s.get("amount")
         amt_str = f" {_fmt(amt)}" if amt is not None else ""
         delay = s.get("delay_months_simple")
@@ -323,12 +321,13 @@ def _render_report(r: dict, ts: str) -> str:
         lines.append("· 安全垫预警：⚠️ 告警")
     else:
         lines.append("· 安全垫预警：余量充足，无预警")
+    if pc:
+        lines.append(f"· 冷静期挂起（{len(pc)} 笔）：")
     for p in pc:
         cat = p.get("category", "")
         amt = p.get("amount", 0)
         exp = p.get("expire_at", "")
         rid = p.get("request_id", "")
-        lines.append(f"· 冷静期挂起（{len(pc)} 笔）：")
         lines.append(f"  · {cat} {_fmt(amt)} 待决")
         lines.append(f"    到期 {exp}（编号 {rid}）")
     for n in notes:
@@ -352,7 +351,16 @@ def _render_calibrate(r: dict, ts: str) -> str:
         else:
             lines.append("以下调整已生效：")
             for c in changes:
-                lines.append(f"· {c.get('description', '')}")
+                desc = c.get("note")
+                if not desc:
+                    t = c.get("type")
+                    if t == "reward_unlocked":
+                        desc = (f"{c.get('objective')} 达成 "
+                                f"{_fmt_pct(c.get('achieve_ratio', 0))} "
+                                f"→ 解锁奖励额度 {_fmt(c.get('reward_quota', 0))}")
+                    else:
+                        desc = f"[{t}] {c.get('objective', '')}".strip()
+                lines.append(f"· {desc}")
         if ro:
             lines.append("· 仅本月有效，原始权重不变")
     lines.append(SEP)
@@ -362,11 +370,11 @@ def _render_calibrate(r: dict, ts: str) -> str:
 # ── §7 奖励 ──────────────────────────────────────────────────────
 
 def _render_reward_status(r: dict, ts: str) -> str:
-    objs = r.get("objectives", [])
+    objs = r.get("rewards", [])
     lines = [_header("🏆", "奖励状态·查询", ts), SEP]
     for o in objs:
         name = o.get("name", "")
-        ar = o.get("achieved_ratio", 0)
+        ar = o.get("achieve_ratio", 0)
         unlocked = o.get("reward_unlocked", False)
         quota = o.get("reward_quota", 0)
         un = "已解锁" if unlocked else "未解锁"
@@ -380,14 +388,14 @@ def _render_reward_status(r: dict, ts: str) -> str:
 
 
 def _render_reward_unlock(r: dict, ts: str) -> str:
-    objs = r.get("objectives", [])
+    objs = r.get("unlocked", [])
     lines = [_header("🏆", "奖励解锁·已解锁", ts), SEP]
     new_unlocked = False
     for o in objs:
         name = o.get("name", "")
-        ar = o.get("achieved_ratio", 0)
+        ar = o.get("achieve_ratio", 0)
         quota = o.get("reward_quota", 0)
-        if ar >= 120:
+        if ar >= 1.2:
             new_unlocked = True
             lines.append(f"· {name} 达成 {_fmt_pct(ar)}（≥120%）→ 解锁奖励额度 {_fmt(quota)}")
     if not new_unlocked:
@@ -400,7 +408,7 @@ def _render_reward_claim(r: dict, ts: str) -> str:
     obj = r.get("objective", "")
     amount = r.get("amount", 0)
     purpose = r.get("purpose", "")
-    remaining = r.get("remaining_quota", 0)
+    remaining = r.get("quota_remaining", 0)
     lines = [
         _header("✅", "奖励支取·已执行", ts),
         SEP,
@@ -451,12 +459,10 @@ def _render_appeal(r: dict, ts: str) -> str:
 def _render_override_preview(r: dict, ts: str) -> str:
     ti = r.get("target_impact", {})
     ds = ti.get("delay_months_simple", 0)
-    dr_ = ti.get("delay_months_real", 0)
     lines = [
         _header("⚠️", "人工覆写·预览", ts),
         SEP,
         f"· 目标影响：延后约 {_fmt_months(ds)}（简化口径，误差 ±20%~50%）",
-        f"· 真实口径约 {_fmt_months(dr_)} 个月",
         "· 确认知悉后回复「确认覆写」执行",
         SEP,
     ]
@@ -481,21 +487,61 @@ def _render_override_confirm(r: dict, ts: str) -> str:
 # ── §10 自定义 / 对账 / 重置 / 导入 ─────────────────────────────
 
 def _render_customize_preview(r: dict, ts: str) -> str:
-    changes = r.get("changes", [])
-    token = r.get("token", "")
-    cw = r.get("cooldown_window", False)
-    cd = r.get("cooldown_days", 1)
+    # 引擎三种输出形态：
+    #  (a) review_config → {swept, pending:[...], message}
+    #  (b) apply 预览/已应用 → {changed_fields, risk_warnings, cooldown_required,
+    #                            token, home_purchase, applied?}
+    #  (d) apply 削弱自身 → {pending:True, cooldown_days, request_id,
+    #                         withdraw_token, expires_at, risk_warnings}
     lines = [_header("📋", "修改预览·待确认", ts), SEP]
-    for c in changes:
-        field = c.get("field", "")
-        fr = c.get("from", "")
-        to = c.get("to", "")
-        cons = c.get("consequence", "")
+
+    if "swept" in r:  # (a) 冷却窗复查
+        swept = r.get("swept") or []
+        items = r.get("pending") or []
+        if swept:
+            lines.append(f"· 冷却窗到期自动生效 {len(swept)} 项")
+        if items:
+            lines.append(f"· 冷却窗内待决 {len(items)} 项：")
+            for it in items:
+                lines.append(f"  · 编号 {it.get('request_id', '')} "
+                             f"剩余 {it.get('days_left', 0)} 天"
+                             f"（到期 {it.get('expires_at', '')}）")
+                for w in it.get("risk_warnings", []):
+                    lines.append(f"    · {w}")
+        else:
+            lines.append("· 冷却窗内无待决修改")
+        lines.append(SEP)
+        return "\n".join(lines)
+
+    if r.get("pending") is True:  # (d) 削弱自身 → 冷却窗
+        cd = r.get("cooldown_days", 1)
+        rid = r.get("request_id", "")
+        wt = r.get("withdraw_token", "")
+        exp = r.get("expires_at", "")
+        lines.append(f"⚠️ 削弱自身修改已进入 {cd} 天冷静窗（编号 {rid}）")
+        lines.append(f"· 到期 {exp} 前可无理由撤回（撤回令牌 {wt}）")
+        for w in r.get("risk_warnings", []):
+            lines.append(f"· {w}")
+        lines.append(SEP)
+        return "\n".join(lines)
+
+    # (b)/(c) 预览 / 已应用
+    token = r.get("token", "")
+    cw = r.get("cooldown_required", False)
+    cd = r.get("cooldown_days", 1)
+    cf = r.get("changed_fields", {}) or {}
+    for field, ch in cf.items():
+        fr = ch.get("from")
+        to = ch.get("to")
         lines.append(f"· {field}: {fr} → {to}")
-        lines.append(f"  后果：{cons}")
-    lines.append(f"· 确认令牌 {token}（回复「确认修改」+ 令牌生效）")
+    for w in r.get("risk_warnings", []) or []:
+        lines.append(f"· {w}")
+    if token:
+        lines.append(f"· 确认令牌 {token}（回复「确认修改」+ 令牌生效）")
     if cw:
         lines.append(f"· ⚠️ 削弱型修改，确认后进入 {cd} 天冷静窗，窗内可无理由撤回")
+    if r.get("applied"):
+        lines.append("· 已落盘生效")
     lines.append(SEP)
     return "\n".join(lines)
 
@@ -519,14 +565,16 @@ def _render_customize_confirm(r: dict, ts: str) -> str:
 def _render_reconcile(r: dict, ts: str) -> str:
     changes = r.get("changes", {})
     psc = r.get("pending_spends_cleared", {})
-    nrd = r.get("next_reconcile_date", "")
+    last = r.get("last_reconcile", "")
     lines = [_header("📊", "对账·已完成", ts), SEP]
     cc = changes.get("corpus")
     if cc:
-        lines.append(f"· 资金池 {_fmt(cc['from'])} → {_fmt(cc['to'])}（差额 {_fmt(cc['diff'])}）")
+        diff = float(cc.get("to", 0) or 0) - float(cc.get("from", 0) or 0)
+        lines.append(f"· 资金池 {_fmt(cc['from'])} → {_fmt(cc['to'])}（差额 {_fmt(diff)}）")
     if psc:
-        lines.append(f"· 清销已批支出 {psc.get('count', 0)} 笔（合计 {_fmt(psc.get('total', 0))}）")
-    lines.append(f"· 下次对账提醒：{nrd}")
+        lines.append(f"· 清销已批支出 {psc.get('count', 0)} 笔"
+                     f"（合计 {_fmt(psc.get('total_actual_cash_out', 0))}）")
+    lines.append(f"· 本次对账：{last}" if last else "· 本次对账已完成")
     lines.append(SEP)
     return "\n".join(lines)
 
@@ -546,17 +594,32 @@ def _render_reset_preview(r: dict, ts: str) -> str:
 
 def _render_reset_confirm(r: dict, ts: str) -> str:
     sha = r.get("old_contract_sha256", "")
-    # 嵌套的 init 结果
-    init_rendered = r.get("_init_rendered", "")
+    corpus = r.get("corpus", 0)
+    monthly = r.get("monthly_contribution", 0)
+    objs = r.get("objectives", [])
+    warnings = r.get("warnings", [])
+    currency = r.get("currency", "CNY")
+    sym = CURRENCY_SYMBOLS.get(currency, currency)
     lines = [
         _header("✅", "重置·已生效", ts),
         SEP,
         f"· 旧契约 sha256: {sha}（已归档）",
         "· 新契约回执：",
-        SEP,
+        f"  资金池 {sym}{corpus:,.2f}·月度净流入 {sym}{monthly:,.2f}",
     ]
-    if init_rendered:
-        lines.append(init_rendered)
+    for o in objs:
+        name = o.get("name", "")
+        ta = o.get("target_amount")
+        dl = o.get("deadline", "")
+        if ta and dl:
+            lines.append(f"  · {name}（{sym}{ta:,.2f}，{dl}）")
+        elif ta:
+            lines.append(f"  · {name}（{sym}{ta:,.2f}）")
+        else:
+            lines.append(f"  · {name}")
+    for w in warnings:
+        lines.append(f"  · {w}")
+    lines.append(SEP)
     return "\n".join(lines)
 
 
@@ -589,10 +652,25 @@ def _render_import_confirm(r: dict, ts: str) -> str:
     lines = [
         _header("✅", "资产导入·已生效", ts),
         SEP,
-        applied.get("summary", ""),
-        "· 审批已解锁",
-        SEP,
     ]
+    if applied:
+        corpus = applied.get("corpus")
+        monthly = applied.get("monthly_contribution")
+        liabs = applied.get("liabilities") or []
+        rigid = applied.get("rigid_annual_expenses") or []
+        parts = []
+        if corpus is not None:
+            parts.append(f"资金池 {_fmt(corpus)}")
+        if monthly is not None:
+            parts.append(f"月净流入 {_fmt(monthly)}")
+        if parts:
+            lines.append("· " + "·".join(parts))
+        if liabs:
+            lines.append(f"· 负债 {len(liabs)} 项已纳入")
+        if rigid:
+            lines.append(f"· 刚性年支出 {len(rigid)} 项已纳入")
+    lines.append("· 审批已解锁")
+    lines.append(SEP)
     return "\n".join(lines)
 
 

@@ -130,7 +130,7 @@ decision.scene
 契约对照：{decision.summary 中的契约条款}
 目标影响：{impacted_objectives[0].name} 延后约 {impact.delay_months_simple} 个月（简化口径，误差 ±20%~50%）
 替代方案：{decision.summary 中的替代方案}
-冷静期 {days} 天 expire_at={expire_at}（编号 {request_id}）
+冷静期 {days} 天，到期 {expire_at}（编号 {request_id}）
 ============================================
 ```
 

@@ -69,18 +69,39 @@ CNY→¥ / USD→$ / EUR→€ / GBP→£ / HKD→HK$ / JPY→¥ / SGD→S$ / AU
 
 ---
 
+### 0.5 全局输出骨架（所有命令统一，无一例外）
+
+所有用户可见回执（含审批/撤回/终裁/提醒/初始化/报表/校准/奖励/申诉/覆写/自定义/对账/重置/导入/demo/错误提示/目标归档）**统一套用**以下骨架：
+
+```
+{prefix}{命令标签}·{结果词} 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+{命令专属正文，逐行}
+============================================
+{上下文行：按需}
+```
+
+- `{prefix}`：命令语义前缀 emoji，**保留不删**（✅ 成功 / 📊 数据 / ⏰ 时效 / 📋 流程 / ⚠️ 警示）。
+- 时间戳置于行尾：` 🕐[YYYY-MM-DD HH:MM GMT+8]`（**不保留**星期缩写 `%a`，无 Wed）。
+- 分隔线：纯 ASCII `=` × 44（不用 `─`/框侧线 ┌│└，规避编码风险、仅上下两条）。
+- 上下文行（如「〔今日〕已批 N 笔 …」）仅消费类命令附，置于底分隔线之后。
+- 金额遵循 §0.1（¥ + 千分位 + 2 位小数）。
+- 命令专属正文内容由各节（§1~§11）定义，本骨架只定外层结构；各节示例均已按此套写。
+
+---
+
 ## 1. 审批提交（judge --action submit）
 
-### 1.1 模板选择
+### 1.1 模板选择（决定结果词与正文）
 
 ```
 decision.scene
-├─ "A" + cooldown.triggered=false + whitelist.fast_track=false → templates/opinion.md 场景 A-1
-├─ "A" + cooldown.triggered=false + whitelist.fast_track=true  → templates/opinion.md 场景 A-3
-├─ "A" + cooldown.triggered=true                               → templates/opinion.md 场景 A-2
-├─ "B"                                                         → templates/opinion.md 场景 B
-└─ "C" + inputs.financed=true                                  → templates/opinion.md 场景 C-融资购房
-   "C" + inputs.financed=false                                 → templates/opinion.md 场景 C
+├─ "A" + cooldown.triggered=false + whitelist.fast_track=false → 紧凑卡片 A-1（§11）
+├─ "A" + cooldown.triggered=false + whitelist.fast_track=true  → 紧凑卡片 A-3（§11）
+├─ "A" + cooldown.triggered=true                               → 长模板 A-2（§1.4）
+├─ "B"                                                         → 长模板 B（§1.4）
+└─ "C" + inputs.financed=true                                  → 长模板 C-融资购房（§1.4）
+   "C" + inputs.financed=false                                 → 长模板 C（§1.4）
 ```
 
 ### 1.2 字段选择（show vs omit）
@@ -99,7 +120,21 @@ decision.scene
 
 - **融资购房**（`inputs.financed=true`）：展示首付/贷款/月供三件套，判定看首付是否击穿垫 + 月供是否可覆盖
 - **impacted_objectives 为空数组**：省略目标影响行（小额支出不拖累目标时常见）
-- **rebalance_override 非 null**：在意见末尾追加「⚠️ 本月校准临时调整已生效，审批门槛/投资比例有临时偏移」
+- **rebalance_override 非 null**：在正文末追加「⚠️ 本月校准临时调整已生效，审批门槛/投资比例有临时偏移」
+
+### 1.4 长模板（A-2 / B / C）套骨架示例
+
+```
+📋审批·附条件 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+契约对照：{decision.summary 中的契约条款}
+目标影响：{impacted_objectives[0].name} 延后约 {impact.delay_months_simple} 个月（简化口径，误差 ±20%~50%）
+替代方案：{decision.summary 中的替代方案}
+冷静期 {days} 天 expire_at={expire_at}（编号 {request_id}）
+============================================
+```
+
+> C（驳回）强制三段式：契约对照 → 目标影响 → 替代方案；附冷静期与 request_id。
 
 ---
 
@@ -107,19 +142,30 @@ decision.scene
 
 ### 2.1 撤回（withdraw）
 
-模板：templates/opinion.md「撤回激励文案」
-
 字段来源：返回的 `feedback.*` 对象（**不是** submit 的 `inputs.*`）。
 
-- `feedback.objective` 为 null 时省略目标名，改为「你的长期目标」
-- `feedback.ahead_months_real` 为 null 时省略真实口径行
-- 必须转述 `feedback.estimation_note`（估算非承诺）
+```
+✅撤回·已撤回 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+申请 {request_id}（{category} {amount}）已撤回
+即时回馈：相当于 {feedback.objective} 目标提前约 {feedback.ahead_months_simple} 个月
+· 估算非承诺：基于简化口径，误差 ±20%~50%
+· 钱留在账上，冷静期自动解除
+============================================
+```
+
+- `feedback.objective` 为 null 时改为「你的长期目标」。
+- `feedback.ahead_months_real` 非 null 时追加真实口径行。
+- 必须转述 `feedback.estimation_note`（估算非承诺）。
 
 ### 2.2 确认执行（finalize）
 
 ```
-✅ 终裁确认：申请 {request_id} 按「{decision.result}」终裁执行
-· {decision.summary}
+✅终裁确认·已执行 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+申请 {request_id} 按「{decision.result}」终裁执行
+{decision.summary}
+============================================
 ```
 
 > 简短即可——用户主动确认，不需要重复全部数字。
@@ -127,82 +173,103 @@ decision.scene
 ### 2.3 到期终裁（expire）
 
 ```
-⏰ 到期终裁（{processed.length} 笔）：
-· {processed[0].category?} ¥{processed[0].amount?} → {processed[0].final_status}
-  （{processed[0].decision.result}）
+⏰到期终裁·已处理 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+· {processed[0].category} ¥{processed[0].amount} → {processed[0].final_status}（{processed[0].decision.result}）
 · ...
+============================================
 ```
 
-> `processed` 为空数组时：`✅ 无到期申请待终裁`
-> `final_status=decided` → 批准/附条件生效；`final_status=expired` → 驳回维持、申请失效
+> `processed` 为空数组时：`⏰ 🕐[YYYY-MM-DD HH:MM GMT+8] 到期终裁·已处理` + 正文「✅ 无到期申请待终裁」。
 
 ### 2.4 提醒（reminders）
 
 ```
-⏰ 冷静期提醒（{reminders.length} 笔）：
+⏰冷静期提醒·查询 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
 · {reminders[0].kind=expiring?⚠️ 即将到期:⏳ 冷静中}：{reminders[0].category} ¥{reminders[0].amount}
-  剩余 {reminders[0].days_left} 天（到期 {reminders[0].expire_at}）
-  编号 {reminders[0].request_id}
+  剩余 {reminders[0].days_left} 天（到期 {reminders[0].expire_at}）编号 {reminders[0].request_id}
 · ...
+============================================
 ```
 
-> `reminders` 为空数组时：`✅ 无冷静期挂起申请`
-> `kind=expiring`（≤1天）用 ⚠️ 并建议「确认执行或撤回」；`kind=cooling` 用 ⏳ 常规提醒
+> `reminders` 为空数组时：正文「✅ 无冷静期挂起申请」。
+> `kind=expiring`（≤1天）用 ⚠️ 并建议「确认执行或撤回」；`kind=cooling` 用 ⏳ 常规提醒。
 
 ---
 
 ## 3. 初始化（init）
 
 ```
-✅ 契约已生成（{模式} 模式）
-· 资金池 {symbol}{corpus} {currency} · 月度净流入 {symbol}{monthly_contribution} {currency}
-· 目标：{objectives[0].name}（{symbol}{target_amount}，{deadline}）...
+✅记账初始化·已生成 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+资金池 {symbol}{corpus} {currency}·月度净流入 {symbol}{monthly_contribution} {currency}
+目标：{objectives[0].name}（{symbol}{target_amount}，{deadline}）...
+⚠️ {warnings 逐条}
+============================================
+· 已生成默认契约，可随时说『自定义』逐项调
 ```
 
-- `currency` 非 CNY 时：金额用对应币种符号（USD→$ / EUR→€ / HKD→HK$ 等）
-- `currency=CNY`（默认）：符号用 ¥，不额外标注币种名（保持原样）
-
-- `warnings` 非空时逐条转述（⚠️ 前缀）
-- `rejected_objectives` 非空时转述被拒原因
-- `demo` 区块非空时按 templates/demo.md 渲染
-- 末尾固定语：「已生成默认契约，可随时说『自定义』逐项调」
+- `currency` 非 CNY：金额用对应符号（USD→$ / EUR→€ / HKD→HK$ 等）；CNY 默认用 ¥ 不标币种名。
+- `warnings` 非空逐条转述（⚠️ 前缀）；`rejected_objectives` 非空转述被拒原因；`demo` 非空按 demo 渲染。
 
 ---
 
 ## 4. 演示（demo）
 
-模板：templates/demo.md（已完善，按现有规则渲染）
+```
+✅演示·已生成 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+⚠️ 演示数据，非您的真实契约
+· 场景A {示例} → 批准（无冷静期）
+· 场景B {示例} → 附条件（{days}天冷静期）
+· 场景C {示例} → 驳回（冷却）
+这是演示，不影响真实账户；现在可以说『审查：买X花Y』开始真实审批
+============================================
+```
 
-关键点：
-- `demo_defaults_used=true` 时必须声明「⚠️ 演示数据，非您的真实契约」
-- 末尾固定语：「这是演示，不影响真实账户；现在可以说『审查：买X花Y』开始真实审批」
+- `demo_defaults_used=true` 必须声明「⚠️ 演示数据，非您的真实契约」。
 
 ---
 
 ## 5. 报表（report）
 
-模板：templates/report.md（五段式）
+```
+📊报表·已生成 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+· 资金池 {corpus}·净资产 {net_assets}
+· 安全垫余量 {cushion_margin} alert={cushion_alert}
+· {objectives[].name} 达成 {achieved_ratio}%·{color}（时间轴应达 {time_progress}%）
+· 本月净流入 {monthly_net}，进度平稳
+· 安全垫预警：{cushion_alert?⚠️ 告警:余量充足，无预警}
+{pending_cooling 为空?（本段整段省略）:
+· 冷静期挂起（{pending_cooling.length} 笔）：
+  · {pending_cooling[0].category} ¥{pending_cooling[0].amount} 待决
+    到期 {pending_cooling[0].expire_at}（编号 {pending_cooling[0].request_id}）}
+（notes[] 逐条转述）
+============================================
+```
 
-关键点：
-- `notes[]` 必须**逐条转述**，不可省略
-- `objectives[].ascii` 和 `ascii` **直接引用**，不自绘
-- `cushion_alert=true` 时红色预警
-- `pending_cooling` 为空时整段省略
+- `notes[]` 必须**逐条转述**，不可省略。
+- `cushion_alert=true` 时红色预警。
+- `pending_cooling` 为空时整段省略。
 
 ---
 
 ## 6. 校准（calibrate）
 
 ```
-📊 月度校准（{month}）：
-{changes.length > 0?以下调整已生效:✅ 无需调整，目标进度正常}
+📊月度校准·已生效 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+· {changes.length>0?以下调整已生效:✅ 无需调整，目标进度正常}
 · {changes[0].description}
 · ...
+（rebalance_override 非空：· 仅本月有效，原始权重不变）
+============================================
 ```
 
-- `skipped=true` 时：`✅ 本月已校准过（同月幂等），--force 可强制重跑`
-- `rebalance_override` 非空时转述临时调整内容 + 「仅本月有效，原始权重不变」
-- changes 中的具体数字**原样引用**，禁止心算
+- `skipped=true`：结果词改「已跳过」，正文「✅ 本月已校准过（同月幂等），--force 可强制重跑」。
+- changes 中具体数字**原样引用**，禁止心算。
 
 ---
 
@@ -211,42 +278,51 @@ decision.scene
 ### status
 
 ```
-🏆 里程碑奖励状态：
+🏆奖励状态·查询 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
 · {objectives[0].name}：达成率 {achieved_ratio}% {reward_unlocked?已解锁:未解锁}
-  {reward_quota > 0?可支取 ¥{reward_quota}:暂无可支取额度}
+  {reward_quota>0?可支取 ¥{reward_quota}:暂无可支取额度}
+· ...
+============================================
 ```
 
 ### unlock
 
 ```
-🏆 奖励解锁：
+🏆奖励解锁·已解锁 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
 · {objectives[0].name} 达成 {achieved_ratio}%（≥120%）→ 解锁奖励额度 ¥{reward_quota}
+============================================
 ```
 
-- 无新解锁时：`✅ 暂无新解锁的奖励（达成率 ≥120% 时自动解锁）`
+- 无新解锁：正文「✅ 暂无新解锁的奖励（达成率 ≥120% 时自动解锁）」。
 
 ### claim
 
 ```
-✅ 奖励支取：{objective} ¥{amount}（{purpose}）
+✅奖励支取·已执行 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+{objective} ¥{amount}（{purpose}）
 · 剩余额度 ¥{remaining_quota}
+============================================
 ```
 
-- `error=cushion_violation` 时按错误渲染表处理
+- `error=cushion_violation` 时按 §0.4 错误提示渲染。
 
 ---
 
 ## 8. 审计日志（log）
 
 ```
-📋 审计日志（{log}，{count} 条）：
-{count > 0?
-  · [{records[0].time}] {records[0].event??:records[0].scene} ¥{records[0].amount} {records[0].category}
-  · ...（最近 10 条，超过提示「共 {count} 条，仅展示最近 10 条」）
-:✅ 无记录}
+📋审计日志·{log} 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+共 {count} 条，展示最近 {min(10,count)} 条：
+· [{records[0].time}] {records[0].event??:records[0].scene} ¥{records[0].amount} {records[0].category}
+· ...
+============================================
 ```
 
-> 日志可能很长，**默认只展示最近 10 条**，告知总数。用户要求看全部时再全量展示。
+> 默认只展示最近 10 条，告知总数；用户要求看全部时再全量展示。
 
 ---
 
@@ -255,28 +331,35 @@ decision.scene
 ### 申诉
 
 ```
-📋 申诉结果：{upheld?驳回维持:改判}
-· {decision.summary}
+📋申诉·{upheld?维持:改判} 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+{decision.summary}
 · 申诉计数 {appeal_count}/3 {override_open?→ 已开放人工覆写入口:}
+============================================
 ```
 
-- `override_open=true` 时追加：「你已连续 3 次申诉被驳，可走人工覆写（须确知目标延后影响）」
+- `override_open=true` 追加：「你已连续 3 次申诉被驳，可走人工覆写（须确知目标延后影响）」。
 
 ### 覆写（第一步无 --confirm）
 
 ```
-⚠️ 人工覆写预览：
-· 目标影响：{target_impact.delay_months_simple} 个月（简化口径）
-  / 真实口径 {target_impact.delay_months_real} 个月
+⚠️人工覆写·预览 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+· 目标影响：延后约 {target_impact.delay_months_simple} 个月（简化口径，误差 ±20%~50%）
+· 真实口径约 {target_impact.delay_months_real} 个月
 · 确认知悉后回复「确认覆写」执行
+============================================
 ```
 
 ### 覆写（第二步 --confirm）
 
 ```
-✅ 人工覆写已执行：申请 {request_id} 放行
-· 目标延后影响已记录（{target_impact.delay_months_simple} 个月）
+✅人工覆写·已执行 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+申请 {request_id} 放行
+· 目标延后影响已记录（约 {target_impact.delay_months_simple} 个月）
 · 已落 override_log
+============================================
 ```
 
 ---
@@ -286,71 +369,137 @@ decision.scene
 ### 自定义预览（无 --confirm）
 
 ```
-📋 修改预览：
+📋修改预览·待确认 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
 · {changes[0].field}: {changes[0].from} → {changes[0].to}
   后果：{changes[0].consequence}
-· 确认令牌 {token}（回回复「确认修改」+ 令牌生效）
-{cooldown_window?· ⚠️ 此为削弱型修改，确认后进入 {cooldown_days} 天冷静窗，窗内可无理由撤回:}
+· 确认令牌 {token}（回复「确认修改」+ 令牌生效）
+{cooldown_window?· ⚠️ 削弱型修改，确认后进入 {cooldown_days} 天冷静窗，窗内可无理由撤回:}
+============================================
 ```
 
 ### 自定义确认（--confirm + --token）
 
 ```
-✅ 修改已生效：{changes_summary}
+✅修改生效·已生效 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+{changes_summary}
 {cooldown_window?· 进入 {cooldown_days} 天冷静窗（编号 {request_id}），窗内可「记账自定义·撤回」:}
+============================================
 ```
 
 ### 对账（reconcile）
 
 ```
-📊 对账完成：
+📊对账·已完成 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
 {changes.corpus?· 资金池 ¥{changes.corpus.from} → ¥{changes.corpus.to}（差额 ¥{changes.corpus.diff}）:}
 {pending_spends_cleared?· 清销已批支出 {pending_spends_cleared.count} 笔（合计 ¥{pending_spends_cleared.total}）:}
 · 下次对账提醒：{next_reconcile_date}
+============================================
 ```
 
 ### 重置预览（无 --confirm）
 
 ```
-⚠️ 重置警告：
+⚠️重置警告·待确认 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
 · 将重建整个契约（审计日志保留）
 · 旧契约 sha256: {old_contract_sha256}
 · 确认后须提供新契约参数（资金池/月度流入/目标）
+============================================
 ```
 
 ### 重置确认（--confirm）
 
 ```
-✅ 契约已重置
+✅重置·已生效 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
 · 旧契约 sha256: {old_contract_sha256}（已归档）
-· 新契约回执：...（按 init 渲染）
+· 新契约回执：（按 §3 init 渲染）
+============================================
 ```
 
 ### 导入暂存
 
 ```
-📋 资产导入暂存（来源：{source}）：
+📋资产导入·待核对 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
 · 总资产 ¥{summary.total_assets}
 · 负债 {summary.liabilities_count} 项 / 刚性支出 {summary.rigid_count} 项
-{suspicious.length > 0?· ⚠️ 可疑流水 {suspicious.length} 条，请核对:· 无可疑流水}
+{suspicious.length>0?· ⚠️ 可疑流水 {suspicious.length} 条，请核对:· 无可疑流水}
 · 确认令牌 {token}
 · 核对后回复「确认导入」+ 令牌生效；或「取消导入」放弃
 · ⚠️ 导入待核对状态将锁定全部审批
+============================================
 ```
 
 ### 导入确认
 
 ```
-✅ 资产导入已确认生效
+✅资产导入·已生效 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
 · {applied.summary}
 · 审批已解锁
+============================================
 ```
 
 ### 导入取消
 
 ```
-✅ 导入已取消，资产状态已还原
+✅资产导入·已取消 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+资产状态已还原
+============================================
 ```
+
+### 目标完结/归档（objective --to completed/archived）
+
+```
+✅目标·已归档 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+· {name} 已达成 {achieved_ratio}%，归档至历史目标
+· 后续资金可重新分配
+============================================
+```
+
+---
+
+## 11. 审批紧凑卡片（judge submit A-1/A-3 轻量回执）
+
+> 适用：场景 A-1 / A-3 小额直批、计划内/外均适用；连续高频审批时优先用此卡片，替代 §1.4 长模板。
+> B（附条件）/ C（驳回）**不**走此卡片，仍用 §1.4 三段式长模板（同样套 §0.5 骨架）。
+
+### 11.1 格式（套 §0.5 骨架）
+
+```
+✅审批·批准 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+¥{amount} {category}
+安全垫 ¥{effective_cushion} 之上 · FIRE 不受损
+账本 ¥{corpus} → ¥{remaining_after}
+============================================
+〔今日〕已批 {n} 笔 / ¥{today_total} / 安全垫余量 ¥{margin}
+```
+
+### 11.2 字段规则
+
+| 行 | 来源 |
+|---|---|
+| 头 | `✅审批·批准 🕐[YYYY-MM-DD HH:MM GMT+8]`（结论词=批准/附条件/驳回；**不**重复场景字母 A/B/C） |
+| 消费行 | `¥{amount} {category}`（金额格式遵循 §0.1：¥ + 千分位 + 2 位小数） |
+| 判定行 | `安全垫 ¥{effective_cushion} 之上 · FIRE 不受损`（impacted_objectives 为空时此句固定） |
+| 账本行 | `账本 ¥{corpus} → ¥{remaining_after}` |
+| 框外累计 | `〔今日〕已批 {n} 笔 / ¥{today_total} / 安全垫余量 ¥{margin}`（margin = remaining_after − (corpus − effective_cushion)） |
+
+### 11.3 约束
+
+- 时间戳 ` 🕐[YYYY-MM-DD HH:MM GMT+8]`（无 Wed）。
+- 金额**合规** ¥ 格式（§0.1），不豁免千分位/小数。
+- 分隔线纯 ASCII `=` × 44（套 §0.5，不用 `─`/侧框）。
+- **不输出**「冷静期：无」行——A-1/A-3 恒为无，属冗余占位；A-2（有冷却）在判定行后追加 `{days}天 expire_at={expire_at}` 即可。
+- 多币种（§0.4）：消费行改双显 `$45.00 USD（汇率 7.10 → ¥319.50 CNY）`，其余行仍用基准币种 ¥。
+- 此卡片与 §1.4 opinion 长模板并存：用户未指定时，**小额直批默认用本卡片**；涉及冷静期/白名单/融资购房等需展开说明时回退长模板。
 
 ---
 
@@ -358,29 +507,32 @@ decision.scene
 
 | 命令 | 模板 | 核心展示字段 | 省略字段 |
 |---|---|---|---|
-| judge submit A-1 | opinion.md A-1 | decision/amount/remaining_after | formulas/optimization/内部变量 |
-| judge submit A-2 | opinion.md A-2 | +cooldown/request_id/impact | 同上 |
-| judge submit A-3 | opinion.md A-3 | +whitelist.remaining_annual | 同上 |
-| judge submit B | opinion.md B | +alt_months/alt_per_month | 同上 |
-| judge submit C | opinion.md C | +替代方案/差额 | 同上 |
-| judge withdraw | opinion.md 撤回 | feedback.* | — |
-| judge finalize | 本文件 §2.2 | request_id/decision | — |
-| judge expire | 本文件 §2.3 | processed[] | — |
-| judge reminders | 本文件 §2.4 | reminders[] | — |
-| report | report.md | 全五段 | formulas/ref/stub/snapshot内部 |
-| init | 本文件 §3 | corpus/monthly/objectives | — |
-| demo | demo.md | 三场景 | — |
-| calibrate | 本文件 §6 | changes[] | formulas |
-| reward status | 本文件 §7 | achieved_ratio/reward_quota | — |
-| reward unlock | 本文件 §7 | reward_quota | — |
-| reward claim | 本文件 §7 | amount/remaining | — |
-| log | 本文件 §8 | records[]（最近10条） | — |
-| appeal | 本文件 §9 | upheld/decision/appeal_count | — |
-| customize 预览 | 本文件 §10 | changes[]/token | — |
-| customize 确认 | 本文件 §10 | changes_summary | — |
-| reconcile | 本文件 §10 | changes/pending_spends_cleared | — |
-| reset 预览 | 本文件 §10 | old_contract_sha256 | — |
-| reset 确认 | 本文件 §10 | +init回执 | — |
-| import-asset 暂存 | 本文件 §10 | summary/suspicious/token | — |
-| import-asset 确认 | 本文件 §10 | applied | — |
-| import-asset 取消 | 本文件 §10 | — | — |
+| judge submit A-1 / A-3 | §11 紧凑卡片 | amount/effective_cushion/remaining_after | formulas/optimization/内部变量 |
+| judge submit A-2 | §1.4 长模板 | +cooldown/request_id/impact | 同上 |
+| judge submit B | §1.4 长模板 | +alt_months/alt_per_month | 同上 |
+| judge submit C | §1.4 长模板 | +替代方案/差额 | 同上 |
+| judge withdraw | §2.1 | feedback.* | — |
+| judge finalize | §2.2 | request_id/decision | — |
+| judge expire | §2.3 | processed[] | — |
+| judge reminders | §2.4 | reminders[] | — |
+| report | §5 | 全五段 | formulas/ref/stub/snapshot内部 |
+| init | §3 | corpus/monthly/objectives | — |
+| demo | §4 | 三场景 | — |
+| calibrate | §6 | changes[] | formulas |
+| reward status | §7 | achieved_ratio/reward_quota | — |
+| reward unlock | §7 | reward_quota | — |
+| reward claim | §7 | amount/remaining | — |
+| log | §8 | records[]（最近10条） | — |
+| appeal | §9 | upheld/decision/appeal_count | — |
+| customize 预览 | §10 | changes[]/token | — |
+| customize 确认 | §10 | changes_summary | — |
+| reconcile | §10 | changes/pending_spends_cleared | — |
+| reset 预览 | §10 | old_contract_sha256 | — |
+| reset 确认 | §10 | +init回执 | — |
+| import-asset 暂存 | §10 | summary/suspicious/token | — |
+| import-asset 确认 | §10 | applied | — |
+| import-asset 取消 | §10 | — | — |
+| objective 归档 | §10 | achieved_ratio | — |
+| 错误提示（12类） | §0.4 表 + §0.5 骨架 | message + 引导 | JSON/退出码 |
+
+> 所有条目均套 §0.5 全局骨架：`{prefix}[时间戳] {命令}·{结果词}` + `=`×44 + 正文 + 上下文行。

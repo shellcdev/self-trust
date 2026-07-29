@@ -93,7 +93,7 @@ CNY→¥ / USD→$ / EUR→€ / GBP→£ / HKD→HK$ / JPY→¥ / SGD→S$ / AU
 - 金额遵循 §0.1（¥ + 千分位 + 2 位小数）。
 - 命令专属正文内容由各节（§1~§11）定义，本骨架只定外层结构；各节示例均已按此套写。
 - **字段缺失降级（引擎未产出时，严禁把 `null`/字段名/内部注记暴露给用户）**：
-  - `expire_at` / `request_id` 为 null → 冷却期行降级为「冷静期 {days} 天，到期终裁（§5.1）」，**不显编号**（编号属内部队列标识，用户无需见）；
+  - `expire_at` / `request_id` 通常非 null（judge 真实产出 request_id 与 expire_at），仅异常为 null 时冷却期行降级为「冷静期 {days} 天，到期终裁（§5.1）」，**不显编号**（编号属内部队列标识，用户无需见）；
   - `alt_plan` 为 null → 替代方案行降级为「（暂无自动替代方案，按 §5.3 自定分期）」；
   - demo 命令的 `alt_plan_scenario3` 非空时，替代方案填其 `months` / `per_month`（演示三场景场景 C 即 18 期 / ¥2,333.33），不适用上述 null 降级；
   - 任一字段缺失均不得写成「引擎未生成 xxx」「返回 null」等调试语。
@@ -141,7 +141,7 @@ decision.scene
 契约对照：{decision.summary 中的契约条款}
 目标影响：{impacted_objectives[0].name} 延后约 {impact.delay_months_simple} 个月（简化口径，误差 ±20%~50%）
 替代方案：{decision.summary 中的替代方案}
-冷静期 {days} 天，到期 {expire_at}（编号 {request_id}）
+冷静期 {days} 天，到期 {expire_at}（编号 {request_id}）（若 `expire_at` / `request_id` 异常为 null，按 §0.5 字段缺失降级规则降级为「冷静期 {days} 天，到期终裁（§5.1）」且不显编号）
 ```
 
 > C（驳回）强制三段式：契约对照 → 目标影响 → 替代方案；附冷静期与 request_id。
@@ -493,13 +493,26 @@ decision.scene
 〔今日〕已批 {n} 笔 / ¥{today_total} / 安全垫余量 ¥{margin}
 ```
 
+非空示例（场景2 手机 ¥6,000，FIRE 延后；A-2 附条件 + 冷却期行同卡）：
+```text
+============================================
+📋审批·附条件 🕐[YYYY-MM-DD HH:MM GMT+8]
+============================================
+¥6,000.00 合理享受
+安全垫 ¥24,000.00 之上 · FIRE 约 1.5 个月（简化口径，误差 ±20%~50%）
+账本 ¥50,000.00 → ¥44,000.00
+冷静期 3 天，到期 2026-08-01T00:00:00（编号 6f3bdd97b623）
+--------------------------------------------
+〔今日〕已批 1 笔 / ¥6,000.00 / 安全垫余量 ¥18,000.00
+```
+
 ### 11.2 字段规则
 
 | 行 | 来源 |
 |---|---|
 | 头 | `✅审批·批准 🕐[YYYY-MM-DD HH:MM GMT+8]`（结论词=批准/附条件/驳回；**不**重复场景字母 A/B/C） |
 | 消费行 | `¥{amount} {category}`（金额格式遵循 §0.1：¥ + 千分位 + 2 位小数） |
-| 判定行 | `安全垫 ¥{effective_cushion} 之上 · FIRE 不受损`（impacted_objectives 为空时此句固定） |
+| 判定行 | impacted_objectives 为空：`安全垫 ¥{effective_cushion} 之上 · FIRE 不受损`；非空：`安全垫 ¥{effective_cushion} 之上 · {name}约{delay_months_simple}个月（简化口径，误差 ±20%~50%）`（多目标用 `、` 连 `{name}约{n}月`；任一 material_lag=true 前缀 ⚠️） |
 | 账本行 | `账本 ¥{corpus} → ¥{remaining_after}` |
 | 框外累计 | `〔今日〕已批 {n} 笔 / ¥{today_total} / 安全垫余量 ¥{margin}`（margin = remaining_after − (corpus − effective_cushion)） |
 

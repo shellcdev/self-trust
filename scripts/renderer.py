@@ -89,9 +89,14 @@ def _render_judge_submit(r: dict, ts: str) -> str:
         ]
         # 消费行
         lines.append(f"{_fmt(amount)} {category}")
-        # 判定行
-        if obj_name:
-            lines.append(f"安全垫 {_fmt(cushion)} 之上 · {obj_name} 不受损")
+        # 判定行（§11.2：impacted_objectives 空→不受损；非空→显示延迟）
+        if imp:
+            parts = []
+            for o in imp:
+                nm = o.get("name", "目标")
+                dly = o.get("delay_months_simple", delay_simple)
+                parts.append(f"{nm}约{_fmt_months(dly)}个月")
+            lines.append(f"安全垫 {_fmt(cushion)} 之上 · {'、'.join(parts)}（简化口径，误差 ±20%~50%）")
         else:
             lines.append(f"安全垫 {_fmt(cushion)} 之上 · 目标不受损")
         # 账本行
@@ -116,7 +121,10 @@ def _render_judge_submit(r: dict, ts: str) -> str:
         lines.append(f"目标影响：{obj_name} 延后约 {_fmt_months(delay_simple)}（简化口径，误差 ±20%~50%）")
 
     if cooldown_t:
-        lines.append(f"冷静期 {days} 天，到期 {expire_at}（编号 {request_id}）")
+        if expire_at and request_id:
+            lines.append(f"冷静期 {days} 天，到期 {expire_at}（编号 {request_id}）")
+        else:
+            lines.append(f"冷静期 {days} 天，到期终裁（§5.1）")
 
     lines.append(SEP)
     return "\n".join(lines)

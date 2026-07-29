@@ -238,7 +238,7 @@ decision.scene
 📊报表·已生成 🕐[YYYY-MM-DD HH:MM GMT+8]
 ============================================
 · 资金池 {corpus}·净资产 {net_assets}
-· 安全垫余量 {cushion_margin} alert={cushion_alert}
+· 安全垫余量 {cushion_margin}
 · {objectives[].name} 达成 {achieved_ratio}%·{color}（时间轴应达 {time_progress}%）
 · 本月净流入 {monthly_net}，进度平稳
 · 安全垫预警：{cushion_alert?⚠️ 告警:余量充足，无预警}
@@ -497,7 +497,7 @@ decision.scene
 - 时间戳 ` 🕐[YYYY-MM-DD HH:MM GMT+8]`（无 Wed）。
 - 金额**合规** ¥ 格式（§0.1），不豁免千分位/小数。
 - 分隔线纯 ASCII `=` × 44（套 §0.5，不用 `─`/侧框）。
-- **不输出**「冷静期：无」行——A-1/A-3 恒为无，属冗余占位；A-2（有冷却）在判定行后追加 `{days}天 expire_at={expire_at}` 即可。
+- 无冷静期（A-1/A-3）不输出冷静期行；A-2（有冷却）在判定行后追加「冷静期 {days} 天，到期 {expire_at}（编号 {request_id}）」即可。
 - 多币种（§0.4）：消费行改双显 `$45.00 USD（汇率 7.10 → ¥319.50 CNY）`，其余行仍用基准币种 ¥。
 - 此卡片与 §1.4 opinion 长模板并存：用户未指定时，**小额直批默认用本卡片**；涉及冷静期/白名单/融资购房等需展开说明时回退长模板。
 

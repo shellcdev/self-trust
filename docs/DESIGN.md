@@ -665,7 +665,7 @@ approval_log 每笔记录须含：
 **初始化护栏（防止覆盖 / 虚高 / 脏数据）**：
 1. **重复初始化防护**：落库前检测 `<data-dir>/contract.json` 是否已存在。已存在则**拒绝整文件重写**，回「已存在契约，增量修改请用 `记账自定义`；如需彻底重建请用 `记账重置`（带二次确认，且保留 audit 目录历史）」。初始化路径不绕过 §10.3 三区权限——契约属配置区，必须经 `记账自定义` 闸门或 `记账重置` 显式重建，禁止静默覆盖。
 2. **净口径警告**：若用户未按净口径填 `monthly_contribution`（即填了毛可支配额，未补 `liabilities` / `rigid_annual_expenses`），回执末尾加 ⚠️「当前 `monthly_contribution` 为毛口径，`living_baseline` / `safety_cushion` 据此偏高，建议尽快 `记账自定义` 补负债/刚性支出」。
-3. **目标 deadline 校验**：`objectives[].expected_date` 必须晚于 `start_date`（=当日）；填错或早于当日则驳回该项并提示重填，不生成负周期。
+3. **目标 deadline 校验**：`objectives[].deadline` 必须晚于 `start_date`（=当日）；填错或早于当日则驳回该项并提示重填，不生成负周期。
 4. **对账锚点初始化**：init 顺手设 `reconcile.last_reconcile = 初始化当日`，使 §3.2 的 30 天对账窗口从首日起算，边界清晰。
 
 **效果**：零配置上手，默认值全部指向 `balanced` + 安全垫护栏，先跑起来再精调。

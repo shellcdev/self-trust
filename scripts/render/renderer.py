@@ -16,7 +16,9 @@ import datetime
 from typing import Any
 
 SEP: str = "=" * 44
-"""分隔线：44 个等号"""
+"""分隔线：44 个等号（仅用于顶部 + 标题下，§0.5）"""
+SEP_CTX: str = "-" * 44
+"""正文↔上下文分隔线：44 个短横（§0.5 规定，区分「正文块」与「上下文行」，非 =）"""
 
 
 # ── 工具函数 ────────────────────────────────────────────────────
@@ -236,7 +238,7 @@ def _render_init(r: dict, ts: str) -> str:
     lines.append(f"目标：{'；'.join(obj_strs)}")
     for w in warnings:
         lines.append(f"⚠️ {w}")
-    lines.append(SEP)
+    lines.append(SEP_CTX)
     lines.append("· 已生成默认契约，可随时说『自定义』逐项调")
     return "\n".join(lines)
 
@@ -749,6 +751,24 @@ def _fmt_months(v: float) -> str:
     return f"{v:.1f} 个月"
 
 
+def _apply_skeleton(text: str) -> str:
+    """§0.5 骨架强制（唯一权威入口）：确保顶部 =×44，剔除卡片末行的任何分隔线。
+
+    各渲染函数只负责「标题下分隔线 + 正文（+ 可选上下文）」，统一在此：
+      1. 补全顶部 =×44（历史所有函数都漏了顶部分隔线）；
+      2. 清除尾部分隔线（= 或 -，长度≥40）——§0.5 规定「卡片最末行之后严禁任何分隔线」。
+    正文↔上下文之间的 ---×44 分隔线由各函数自行输出（init/demo 已合规）。
+    """
+    out = text.split("\n")
+    # 末行若是分隔线（纯 = 或纯 -，长度≥40）则剔除
+    if out and len(out[-1]) >= 40 and set(out[-1]) <= {"=", "-"}:
+        out.pop()
+    # 顶部确保有 = ×44
+    if not (out and len(out[0]) >= 40 and set(out[0]) <= {"=", "-"}):
+        out.insert(0, SEP)
+    return "\n".join(out)
+
+
 def render(result: dict, command: str, subcommand: str | None = None) -> str:
     """渲染引擎主入口。
 
@@ -767,82 +787,83 @@ def render(result: dict, command: str, subcommand: str | None = None) -> str:
     ts = _ts_from(result)
 
     if not result.get("ok", True):
-        return _render_error(result, ts)
+        return _apply_skeleton(_render_error(result, ts))
 
+    text = _render_error(result, ts)  # 兜底（下方分支必覆盖）
     # judge 按 action 分派
     if command == "judge":
         action = subcommand or "submit"
         if action == "submit":
-            return _render_judge_submit(result, ts)
-        if action == "withdraw":
-            return _render_judge_withdraw(result, ts)
-        if action == "finalize":
-            return _render_judge_finalize(result, ts)
-        if action == "expire":
-            return _render_judge_expire(result, ts)
-        if action == "reminders":
-            return _render_judge_reminders(result, ts)
-        return _render_error({"ok": False, "error": "invalid",
-                              "message": f"未知 judge action: {action}"}, ts)
-
-    if command == "init":
-        return _render_init(result, ts)
-    if command == "demo":
-        return _render_demo(result, ts)
-    if command == "report":
-        return _render_report(result, ts)
-    if command == "calibrate":
-        return _render_calibrate(result, ts)
-    if command == "reconcile":
-        return _render_reconcile(result, ts)
-
-    if command == "reward":
+            text = _render_judge_submit(result, ts)
+        elif action == "withdraw":
+            text = _render_judge_withdraw(result, ts)
+        elif action == "finalize":
+            text = _render_judge_finalize(result, ts)
+        elif action == "expire":
+            text = _render_judge_expire(result, ts)
+        elif action == "reminders":
+            text = _render_judge_reminders(result, ts)
+        else:
+            text = _render_error({"ok": False, "error": "invalid",
+                                  "message": f"未知 judge action: {action}"}, ts)
+    elif command == "init":
+        text = _render_init(result, ts)
+    elif command == "demo":
+        text = _render_demo(result, ts)
+    elif command == "report":
+        text = _render_report(result, ts)
+    elif command == "calibrate":
+        text = _render_calibrate(result, ts)
+    elif command == "reconcile":
+        text = _render_reconcile(result, ts)
+    elif command == "reward":
         act = subcommand or "status"
         if act == "status":
-            return _render_reward_status(result, ts)
-        if act == "unlock":
-            return _render_reward_unlock(result, ts)
-        if act == "claim":
-            return _render_reward_claim(result, ts)
-        return _render_error(result, ts)
-
-    if command == "log":
-        return _render_log(result, ts)
-
-    if command == "appeal":
+            text = _render_reward_status(result, ts)
+        elif act == "unlock":
+            text = _render_reward_unlock(result, ts)
+        elif act == "claim":
+            text = _render_reward_claim(result, ts)
+        else:
+            text = _render_error(result, ts)
+    elif command == "log":
+        text = _render_log(result, ts)
+    elif command == "appeal":
         ov = subcommand == "override"
         confirm = subcommand == "override_confirm"
         if confirm:
-            return _render_override_confirm(result, ts)
-        if ov:
-            return _render_override_preview(result, ts)
-        return _render_appeal(result, ts)
-
-    if command == "customize":
+            text = _render_override_confirm(result, ts)
+        elif ov:
+            text = _render_override_preview(result, ts)
+        else:
+            text = _render_appeal(result, ts)
+    elif command == "customize":
         if subcommand == "confirm":
-            return _render_customize_confirm(result, ts)
-        return _render_customize_preview(result, ts)
-
-    if command == "reset":
+            text = _render_customize_confirm(result, ts)
+        else:
+            text = _render_customize_preview(result, ts)
+    elif command == "reset":
         if subcommand == "confirm":
-            return _render_reset_confirm(result, ts)
-        return _render_reset_preview(result, ts)
-
-    if command == "import-asset":
+            text = _render_reset_confirm(result, ts)
+        else:
+            text = _render_reset_preview(result, ts)
+    elif command == "import-asset":
         status = subcommand or "pending"
         if status == "pending":
-            return _render_import_pending(result, ts)
-        if status == "confirm":
-            return _render_import_confirm(result, ts)
-        if status == "cancel":
-            return _render_import_cancel(result, ts)
-        return _render_error(result, ts)
+            text = _render_import_pending(result, ts)
+        elif status == "confirm":
+            text = _render_import_confirm(result, ts)
+        elif status == "cancel":
+            text = _render_import_cancel(result, ts)
+        else:
+            text = _render_error(result, ts)
+    elif command == "objective":
+        text = _render_objective(result, ts)
+    else:
+        text = _render_error({"ok": False, "error": "invalid",
+                              "message": f"未知命令: {command}"}, ts)
 
-    if command == "objective":
-        return _render_objective(result, ts)
-
-    return _render_error({"ok": False, "error": "invalid",
-                          "message": f"未知命令: {command}"}, ts)
+    return _apply_skeleton(text)
 
 
 if __name__ == "__main__":  # pragma: no cover — 快速预览用

@@ -258,7 +258,7 @@ def _render_demo(r: dict, ts: str) -> str:
         # 真实契约参数：展示资金池/月净流入（原样引用，不心算）
         ep = r.get("engine_params", {})
         corpus = ep.get("corpus")
-        monthly = ep.get("monthly_contribution")
+        monthly = ep.get("monthly_net")
         param_hint = ""
         if corpus is not None and monthly is not None:
             param_hint = f"（基于你真实契约：资金池 {_fmt(corpus)} / 月净流入 {_fmt(monthly)}）"
@@ -267,15 +267,16 @@ def _render_demo(r: dict, ts: str) -> str:
     # 三场景列表（含金额 + 目标影响）
     scenes = r.get("scenarios", [])
     for s in scenes:
-        label = s.get("label", "")
+        label = s.get("name", "")
         scene = s.get("scene", "")
         days = s.get("cooling_days", 0)
         amt = s.get("amount")
         amt_str = f" {_fmt(amt)}" if amt is not None else ""
         delay = s.get("delay_months_simple")
         impact_str = ""
-        if delay is not None and delay > 0:
-            impact_str = f"  · 目标延后约 {delay:.1f} 个月（简化口径）"
+        # §0.1：月数 < 0.1 视为无影响（省略行，不展示 0 / 0.0 噪声）
+        if delay is not None and round(delay, 1) >= 0.1:
+            impact_str = f"  · 目标延后约 {round(delay, 1):.1f} 个月（简化口径）"
         if scene == "A":
             lines.append(f"· {label}{amt_str} → 批准（无冷静期）{impact_str}")
         elif scene == "B":

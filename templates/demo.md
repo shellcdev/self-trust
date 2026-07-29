@@ -15,7 +15,7 @@
 
 | 字段 | JSON 路径 | 格式 |
 |---|---|---|
-| 场景标签 | `scenarios[i].label` | 原样引用 |
+| 场景标签 | `scenarios[i].name` | 原样引用 |
 | 金额 | `scenarios[i].amount` | §0.1（¥ + 千分位 + 2 位小数） |
 | 判定 | `scenarios[i].scene` | A→批准 / B→附条件 / C→驳回 |
 | 冷静期天数 | `scenarios[i].cooling_days` | 整数；A 时省略 |

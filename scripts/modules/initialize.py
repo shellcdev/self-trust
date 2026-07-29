@@ -145,6 +145,10 @@ def lazy_init(
     return {
         "ok": True,
         "contract_path": str(path),
+        "corpus": float(corpus),
+        "monthly_contribution": float(monthly_contribution),
+        "currency": (currency or "CNY").upper(),
+        "objectives": accepted,
         "warnings": warnings,
         "rejected_objectives": rejected,
         "message": "已生成默认契约（balanced），可随时说『自定义』逐项调",

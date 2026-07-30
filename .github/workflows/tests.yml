@@ -21,7 +21,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dev dependency
-        run: python -m pip install --upgrade pip pytest
+        # cryptography 是加密（opt-in）功能的可选依赖；装上来让 test_crypto.py 在 CI 真被测，避免 badge 误导
+        run: python -m pip install --upgrade pip pytest cryptography
 
       - name: Run tests
         run: python -m pytest scripts/tests/ -q

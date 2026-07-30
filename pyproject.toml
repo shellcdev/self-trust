@@ -1,6 +1,6 @@
 [project]
 name = "self-trust"
-version = "0.7.7"
+version = "0.7.18"
 description = "个人自律记账 / 资金池自我治理引擎：确定性 Python 规则引擎 + LLM 薄路由"
 readme = "README.md"
 requires-python = ">=3.9"

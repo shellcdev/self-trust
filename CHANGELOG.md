@@ -1,5 +1,13 @@
 # CHANGELOG — self-trust
 
+## [0.7.18] - 2026-07-30
+
+### Fix（CI 挂红 + 版本元数据陈旧 — 硬伤扫描 P1 修复）
+
+- **CI 挂红**：`tests.yml` 仅 `pip install pytest`，而 `test_crypto.py`（11 例）依赖 `cryptography` 且无 `importorskip` 守卫 → 官方管道加密测试全挂、badge 误导。本次在 `Install dev dependency` 步显式加 `cryptography`，让静态加密功能在 CI 真被测。
+- **版本元数据陈旧**：`pyproject.toml` 的 `version` 滞后在 `0.7.7`（真实 HEAD 已 `[0.7.17]`）。本次对齐到 `0.7.18`（含本次修复）。
+- 无引擎逻辑改动；全量测试仍 **363 passed**（装 `cryptography` 后）。
+
 ## [0.7.17] - 2026-07-28
 
 ### Docs（DESIGN.md 升 v1.1，补三项落地增强的设计落点）

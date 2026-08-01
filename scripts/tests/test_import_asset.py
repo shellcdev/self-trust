@@ -139,6 +139,16 @@ def test_wrong_token_rejected(base_contract):
     assert r2["ok"] is False and r2["error"] == "bad_token"
 
 
+def test_confirm_after_live_change_rejected(base_contract):
+    # stage 后若 live 契约被改动（如中途 customize），confirm 须拒绝，
+    # 防陈旧暂存覆盖 live 编辑（M9 加固）
+    tok = mod.stage_import(base_contract, _candidates(), "x")["token"]
+    base_contract["corpus"] = base_contract["corpus"] + 1   # 模拟 customize 改动
+    r = mod.confirm_import(base_contract, tok)
+    assert r["ok"] is False and r["error"] == "contract_changed"
+    assert base_contract["pending_import"] is not None      # 暂存仍在，未误落盘
+
+
 # ---------------------------------------------------------------- #1 修复：来源缺类不得静默清空 live
 def _candidates_with_provided(corpus=150000, monthly=8000, liabilities=None, rigid=None,
                               provided=None):

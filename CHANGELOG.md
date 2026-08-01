@@ -1,5 +1,19 @@
 # CHANGELOG — self-trust
 
+## [0.7.22] - 2026-08-01
+
+### Fix（硬伤扫描修复：P0 数据丢失 + P1 逻辑绕过 + P2 潜在缺陷）
+- `modules/governance.py` `reset_contract` 删除先于 `lazy_init` 的 `path.unlink()`（P0）：`lazy_init` 对非法目标返回 `ok=False` 不抛异常，原写法会导致旧契约被删不重建、资金池永久丢失；`write_contract(allow_create)` 已原子替换，删此行即修复。
+- `modules/judge.py` `finalize` 对齐 `withdraw`/`expire`（P1）：过期（`today>expire_at`）返回 `already_expired` 阻止终裁；场景 C 终裁维持 `EXPIRED`，避免批准引擎本应自动驳回的申请。
+- `modules/import_asset.py` `confirm_import` 加 `contract_sha` 复核（P1）：stage 记下契约摘要、confirm 比对，stage 后若被 `customize` 改动则拒绝确认，防陈旧暂存覆盖 live 编辑（静默数据丢失）。
+- `core/formulas.py` `f1_effective_cushion` 未知模式兜底返回 0.0（P2）：避免 `customize --set safety_cushion.mode=bogus` 后全部 `judge`/`report` 崩溃；`customize` 预览/落盘同步拒绝非法模式。
+- `modules/reward.py` `unlock_rewards` 审计时间戳改用 `audit_io.now_iso(today)`（P2）：与全链路一致，保 `--today` 逻辑时间回放。
+- `modules/import_asset.py` 可疑月净流中位数改取真中位（P2）：偶数列取上下中位均值，仅影响可疑流水提示。
+- `experts/_shared/check_py39.sh` 仅跳过**空** `__init__.py`（P2）：非空含 `X|Y` 注解会假通过 3.9 守卫。
+- `experts/_shared/check_sync_deps.sh` 无匹配副本时非零退出（P2）：防消费端整体缺失被误判为「一致」。
+- 文档/注释漂移（P2）：`SKILL.md` 单测数 363→409；`sync_deps.sh` 注释路径 `claw/tools/`→`claw/experts/_shared/`；`tests/__init__.py`/`core/__init__.py`/`modules/__init__.py` 补 `from __future__ import annotations`（守卫现已检查非空 `__init__.py`）。
+- 测试：pytest 409 → 414（+5：finalize 过期护栏、finalize 场景 C→expired、confirm contract_changed 拒绝、customize 非法安全垫模式拒绝、reset 失败还原旧契约），smoke 12/12 不变。
+
 ## [0.7.21] - 2026-08-01
 
 ### Refactor（渲染层状态映射 zh_status 统一 + 修 final_status 漏英文）

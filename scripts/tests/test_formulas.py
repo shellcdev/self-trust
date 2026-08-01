@@ -57,9 +57,10 @@ class TestF1:
         assert F.f1_effective_cushion("ratio", 5000, ratio=0.2,
                                       net_assets=-1) == 0.0
 
-    def test_unknown_mode_raises(self):
-        with pytest.raises(ValueError):
-            F.f1_effective_cushion("bogus", 5000)
+    def test_unknown_mode_falls_back_to_zero(self):
+        # 未知模式兜底返回 0（不抛），避免 bogus 模式让 judge/report 全崩；
+        # 非法模式由 customize 边界拒绝。
+        assert F.f1_effective_cushion("bogus", 5000) == 0.0
 
 
 # ---------------- F2 ----------------

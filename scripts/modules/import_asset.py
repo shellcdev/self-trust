@@ -217,7 +217,10 @@ def compute_candidates(balances: list[dict[str, Any]],
             by_month[month] = by_month.get(month, 0.0) + float(amt)
         nets = list(by_month.values())
         if nets:
-            median = sorted(nets)[len(nets) // 2]
+            # 真中位：奇数取中项，偶数取上下中位均值（原写法偶数取上中位，偏误）
+            _sn = sorted(nets)
+            _n = len(_sn)
+            median = (_sn[_n // 2] + _sn[(_n - 1) // 2]) / 2
             monthly = sum(nets) / len(nets)
             for m, net in sorted(by_month.items()):
                 if median and abs(net) > 3 * abs(median):
@@ -251,6 +254,19 @@ def compute_candidates(balances: list[dict[str, Any]],
     }
 
 
+def _staging_baseline_sha(contract: dict[str, Any], prior_status: str) -> str:
+    """契约摘要（排除 stage 自身写入的 pending_import，仅对真实配置区）。
+
+    与 confirm 时的比对口径一致：契约在 stage→confirm 之间仅 pending_import /
+    corpus_status 被本流程改动，其余真实字段须不变；中途 customize 改动会被检出。
+    注意必须「删除」pending_import 键而非置 null——原契约存为 `pending_import: null`，
+    键删除后与 confirm 侧口径一致，否则 sha 不匹配会误拒每一次确认。
+    """
+    base = {k: v for k, v in contract.items() if k != "pending_import"}
+    base["corpus_status"] = prior_status
+    return _contract_sha(base)
+
+
 def stage_import(contract: dict[str, Any], candidates: dict[str, Any],
                  source: str, today: Optional[date] = None) -> dict[str, Any]:
     """§7.3 第一步：拉取候选并暂存，置 corpus_status=imported_pending（锁定审批）。
@@ -268,13 +284,17 @@ def stage_import(contract: dict[str, Any], candidates: dict[str, Any],
                         "当前导入，再发起新导入。"),
         }
     prior_status = contract.get("corpus_status", "manual")
+    _sha = _staging_baseline_sha(contract, prior_status)
     staging = {
         "source": source,
         "candidates": candidates,
         "prior_status": prior_status,
         "staged_at": _now(),
+        # M9 加固：记下 stage 时契约摘要，confirm 时比对，防 stage 后 customize
+        # 改动 live 契约被陈旧暂存覆盖（customize 自身有同等护栏，import 此前缺失）。
+        "contract_sha": _sha,
     }
-    tok = _token(staging, _contract_sha(contract))
+    tok = _token(staging, _sha)
     staging["token"] = tok
     contract["corpus_status"] = "imported_pending"
     contract["pending_import"] = staging
@@ -322,6 +342,16 @@ def confirm_import(contract: dict[str, Any], token: str,
     if err:
         return {"ok": False, "error": err,
                 "message": "导入 token 不匹配（须用 stage 返回的 token）"}
+    # M9 加固：stage 后契约若被改动（如中途 customize），拒绝确认，
+    # 防陈旧暂存值覆盖 live 编辑导致静默数据丢失。
+    # 注意：比对须排除 stage 自身写入的 pending_import / corpus_status，
+    # 仅对真实配置区求 sha（与 stage 时存的 baseline 一致）。
+    _base = {k: v for k, v in contract.items() if k != "pending_import"}
+    _base["corpus_status"] = staging.get("prior_status", contract.get("corpus_status"))
+    if _contract_sha(_base) != staging.get("contract_sha"):
+        return {"ok": False, "error": "contract_changed",
+                "message": "导入暂存后契约已变更（如中途 customize），"
+                           "请重新 stage 再确认。"}
     cands = dict(staging["candidates"])
     # 来源显式提供了哪些分类（stage 时标记）；旧数据无 provided 则回退为「全部覆盖」。
     staged_provided = cands.get("provided", {

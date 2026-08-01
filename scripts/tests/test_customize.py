@@ -50,6 +50,14 @@ def test_preview_shows_risk_for_safety_cushion_down(tmp_data_dir, base_contract)
     assert any("安全垫月数" in w for w in res["risk_warnings"])
 
 
+def test_preview_rejects_invalid_safety_cushion_mode(tmp_data_dir, base_contract):
+    # 非法安全垫模式须在边界拒绝，不写入脏值（兜底 0.0 仅作二次保险）
+    res = mod_customize.preview(tmp_data_dir, _changes_for_set(
+        "safety_cushion.mode", "bogus"))
+    assert res["ok"] is False
+    assert res["error"] == "invalid_safety_cushion_mode"
+
+
 def test_preview_shows_risk_for_optimization_goal(tmp_data_dir, base_contract):
     res = mod_customize.preview(tmp_data_dir, _changes_for_set(
         "optimization_goal", "wealth"))

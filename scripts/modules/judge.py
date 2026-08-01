@@ -625,18 +625,36 @@ def withdraw(data_dir: Path, request_id: str,
 
 def finalize(data_dir: Path, request_id: str,
              today: date | None = None) -> dict[str, Any]:
-    """§5.1 用户到期前确认执行 → cooling → decided，按入队时原判定终裁。"""
+    """§5.1 用户到期前确认执行 → cooling → decided，按入队时原判定终裁。
+
+    对齐 withdraw/expire（H2 同源）：过期后状态机仍 cooling（终裁懒惰），
+    须阻止终裁、改走 expire 惰性终裁；场景 C（原判定驳回）终裁维持 EXPIRED
+    而非 DECIDED，避免批准一个引擎本应自动驳回的申请。
+    """
+    today = today or date.today()
     contract = contract_io.read_contract(data_dir)
     entry = _find_request(contract, request_id)
     if entry is None:
         return {"ok": False, "error": "request_not_found",
                 "message": f"未找到申请 {request_id}"}
+    # 过期护栏：与 withdraw 对齐，过期须走 expire 惰性终裁
+    expire_d = datetime.fromisoformat(entry["expire_at"]).date()
+    if today > expire_d:
+        return {"ok": False, "error": "already_expired",
+                "message": f"申请 {request_id} 已过期，请走到期终裁"}
     src = RequestStatus(entry["status"])
-    if not can_transition(src, RequestStatus.DECIDED):
+    # 场景 C 终裁维持 EXPIRED（原判定驳回失效）；其余 DECIDED
+    scene = (entry.get("decision") or {}).get("scene")
+    dst = RequestStatus.EXPIRED if scene == "C" else RequestStatus.DECIDED
+    if not can_transition(src, dst):
         return {"ok": False, "error": "invalid_transition",
-                "message": f"申请状态 {zh(REQUEST_STATUS_ZH, src.value)} 不可终裁（仅冷静期可）"}
-    entry["status"] = RequestStatus.DECIDED.value
-    _update_pending_spend_status(contract, request_id, SpendStatus.APPROVED.value)  # M4 台账联动
+                "message": f"申请状态 {zh(REQUEST_STATUS_ZH, src.value)} "
+                           f"不可终裁为 {zh(REQUEST_STATUS_ZH, dst.value)}"}
+    entry["status"] = dst.value
+    _update_pending_spend_status(
+        contract, request_id,
+        SpendStatus.APPROVED.value if dst == RequestStatus.DECIDED
+        else SpendStatus.EXPIRED.value)  # M4 台账联动
     contract_io.write_contract(data_dir, contract, actor="engine")
     decision = entry.get("decision", {})
     audit_io.append(data_dir, "approval_log", {
@@ -648,7 +666,7 @@ def finalize(data_dir: Path, request_id: str,
         "decision": decision,
     })
     return {"ok": True, "request_id": request_id,
-            "status": RequestStatus.DECIDED.value, "decision": decision}
+            "status": dst.value, "decision": decision}
 
 
 def expire(data_dir: Path, request_id: str | None = None,

@@ -467,10 +467,30 @@ def build_changes(args) -> dict[str, Any]:
     return changes
 
 
+_VALID_CUSHION_MODES = ("months", "fixed", "ratio")
+
+
+def _check_safety_cushion_mode(new: dict[str, Any]) -> dict[str, Any] | None:
+    """边界校验安全垫模式；非法返回错误 dict，否则 None。
+
+    与 formulas.f1_effective_cushion 的兜底 0.0 形成双层防护：边界处直接拒绝
+    bogus 模式，避免脏值落盘后再靠兜底掩盖（仍给即时反馈）。
+    """
+    sc = new.get("safety_cushion") or {}
+    mode = (sc.get("mode") or "").strip().lower()
+    if mode and mode not in _VALID_CUSHION_MODES:
+        return {"ok": False, "error": "invalid_safety_cushion_mode",
+                "message": f"安全垫模式 {mode!r} 非法，仅支持 months/fixed/ratio"}
+    return None
+
+
 def preview(data_dir: Path, changes: dict[str, Any]) -> dict[str, Any]:
     """预览修改（不落盘）：before/after + 护栏字段风险提示 + 二次确认 token。"""
     contract = contract_io.read_contract(data_dir)
     new, _ = _apply_changes(contract, changes)
+    _mode_err = _check_safety_cushion_mode(new)  # 边界拒绝非法安全垫模式
+    if _mode_err:
+        return _mode_err
     # 提前校验三区 / §5.4（preview 即暴露 GuardError，避免 confirm 才报错）
     _validate_zones(new, contract, "configurator", confirm=True)
 
@@ -522,6 +542,9 @@ def apply(data_dir: Path, changes: dict[str, Any], *, confirm: bool,
         }
 
     new, _ = _apply_changes(contract, changes)
+    _mode_err = _check_safety_cushion_mode(new)  # 边界拒绝非法安全垫模式
+    if _mode_err:
+        return _mode_err
     changed = _diff(contract, new)
     touched_guard = sorted(t for t in changed if t in CORE_GUARD_FIELDS)
     risks = _risk_warnings(new, changed)          # H5 修复：风险提示用修改后契约

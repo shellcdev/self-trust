@@ -11,7 +11,7 @@ LLM 铁律：禁止心算，数字必须原样引用引擎输出。
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -55,7 +55,7 @@ def reward_status(contract: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "rewards": out, "ref": "§6.3"}
 
 
-def unlock_rewards(data_dir: Path) -> dict[str, Any]:
+def unlock_rewards(data_dir: Path, today: date | None = None) -> dict[str, Any]:
     """扫描并解锁达标目标（引擎写运行态子字段 reward_unlocked/reward_quota）。"""
     contract = contract_io.read_contract(data_dir)
     unlocked = []
@@ -72,7 +72,7 @@ def unlock_rewards(data_dir: Path) -> dict[str, Any]:
         contract_io.write_contract(data_dir, contract, actor="engine")
         for u in unlocked:
             audit_io.append(data_dir, "reward_log", {
-                "time": datetime.now().isoformat(timespec="seconds"),
+                "time": audit_io.now_iso(today),
                 "event": "unlocked", "obj": u["name"],
                 "achieve_ratio": u["achieve_ratio"],
                 "reward_quota": u["reward_quota"]})

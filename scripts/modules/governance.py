@@ -15,6 +15,7 @@ LLM 铁律：禁止心算，数字必须原样引用引擎输出。
 from __future__ import annotations
 
 import hashlib
+import shutil
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -226,14 +227,28 @@ def reset_contract(
         "reason": reason or "用户显式重置（§7.1.1）",
         "note": "审计目录全部保留；旧目标引用在报表标注（已重置前）",
     })
-    path.unlink()   # 仅删契约文件；audit/ 不动（§10.1 仅追加不可删）
-    result = lazy_init(data_dir, corpus=corpus,
-                       monthly_contribution=monthly_contribution,
-                       objectives=objectives, today=today)
+    # P0 修复：绝不直接 unlink 旧契约。
+    # lazy_init 要求契约不存在（initialize.py 护栏 1），故先把旧契约 rename 到备份，
+    # 重建失败（ok=False 或异常）则 rename 还原——旧契约永不丢失；重建成功再删备份。
+    backup = path.with_name(path.name + ".bak_reset")
+    shutil.move(str(path), str(backup))
+    try:
+        result = lazy_init(data_dir, corpus=corpus,
+                           monthly_contribution=monthly_contribution,
+                           objectives=objectives, today=today)
+    except Exception:
+        shutil.move(str(backup), str(path))   # 还原旧契约
+        raise
     if not result.get("ok"):
+        shutil.move(str(backup), str(path))   # 还原旧契约
         return {"ok": False, "error": "reinit_failed",
-                "message": "重置后重建失败（旧契约已删，审计日志保留）",
+                "message": "重置后重建失败，已还原旧契约（审计日志保留）",
                 "detail": result}
+    # 重建成功：删除备份（新契约已落盘）
+    try:
+        backup.unlink(missing_ok=True)
+    except OSError:
+        pass
     result["reset"] = True
     result["old_contract_sha256"] = old_hash
     return result

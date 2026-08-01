@@ -112,6 +112,18 @@ class TestReset:
         assert r["ok"] is False and r["error"] == "missing_params"
         assert contract_path(tmp_data_dir).is_file()   # 未删旧契约
 
+    def test_reset_failure_preserves_old_contract(self, tmp_data_dir, base_contract):
+        # P0 修复：重建失败（非法目标：deadline 不晚于当日）须还原旧契约，不得丢失
+        before = read_contract(tmp_data_dir)
+        r = reset_contract(
+            tmp_data_dir, confirm=True, corpus=50000, monthly_contribution=5000,
+            objectives=[{"name": "坏目标", "target_amount": 1,
+                         "deadline": "2020-01-01"}], today=TODAY)
+        assert r["ok"] is False and r["error"] == "reinit_failed"
+        after = read_contract(tmp_data_dir)
+        assert after["corpus"] == before["corpus"]            # 旧契约完好
+        assert after["objectives"][0]["name"] == before["objectives"][0]["name"]
+
 
 class TestReconcile:
     def test_reconcile_updates_corpus_and_anchor(self, tmp_data_dir, base_contract):

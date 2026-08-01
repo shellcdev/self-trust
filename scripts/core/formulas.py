@@ -79,7 +79,9 @@ def f1_effective_cushion(
         return float(fixed)
     if mode == "ratio":
         return max(float(net_assets), 0.0) * float(ratio)
-    raise ValueError(f"未知安全垫模式：{mode!r}")
+    # 未知模式：兜底为 0（无缓冲）而非抛错，避免 bogus 模式（如 customize 误设）
+    # 让全部 judge/report 调用崩溃。非法模式由 customize 预览/落盘在边界处拒绝。
+    return 0.0
 
 
 # ---------------------------------------------------------------- F2

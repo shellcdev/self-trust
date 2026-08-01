@@ -230,11 +230,39 @@ class TestPendingSpendsLedger:
         assert any(pr["request_id"] == r["request_id"] for pr in c["pending_requests"])
 
     def test_finalize_marks_ledger_approved(self, tmp_data_dir, base_contract):
+        # 用可批准冷却请求（场景 A + 冷静期）验证 finalize → approved 联动台账
+        r = submit(tmp_data_dir, amount=5000, category="食品",
+                   planned=False, today=TODAY)
+        rid = r["request_id"]
+        fr = finalize(tmp_data_dir, rid, today=TODAY)
+        assert fr["ok"]
+        assert fr["status"] == "decided"
+        c = read_contract(tmp_data_dir)
+        sp = next(s for s in c["pending_spends"] if s["request_id"] == rid)
+        assert sp["status"] == "approved"
+
+    def test_finalize_scene_c_yields_expired(self, tmp_data_dir, base_contract):
+        # 场景 C（原判定驳回）终裁须维持 expired，而非错误批准（修复：finalize 须看 decision.scene）
         r = submit(tmp_data_dir, amount=200000, category="合理享受",
                    planned=False, today=TODAY)
         rid = r["request_id"]
         fr = finalize(tmp_data_dir, rid, today=TODAY)
         assert fr["ok"]
+        assert fr["status"] == "expired"
         c = read_contract(tmp_data_dir)
         sp = next(s for s in c["pending_spends"] if s["request_id"] == rid)
-        assert sp["status"] == "approved"
+        assert sp["status"] == "expired"
+
+    def test_finalize_after_expiry_rejected(self, tmp_data_dir, base_contract):
+        # 过期后 finalize 须拒绝，改走 expire 惰性终裁（修复：finalize 加 already_expired 护栏）
+        from datetime import timedelta
+        r = submit(tmp_data_dir, amount=5000, category="食品",
+                   planned=False, today=TODAY)
+        rid = r["request_id"]
+        c = read_contract(tmp_data_dir)
+        exp = next(e for e in c["pending_requests"] if e["request_id"] == rid)
+        from datetime import datetime
+        expire_d = datetime.fromisoformat(exp["expire_at"]).date()
+        fr = finalize(tmp_data_dir, rid, today=expire_d + timedelta(days=1))
+        assert not fr["ok"]
+        assert fr["error"] == "already_expired"

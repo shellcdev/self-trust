@@ -163,7 +163,7 @@ def _risk_warnings(contract: dict[str, Any], changed: dict[str, Any]) -> list[st
         nd = changed["distribution_rules"]["to"].get("invest_ratio")
         if od is not None and nd is not None:
             if nd == 0:
-                warns.append("invest_ratio 归零，FIRE 将实质性停滞（每月增值投入归零）")
+                warns.append("投资比例归零，FIRE 将实质性停滞（每月增值投入归零）")
             elif nd < od:
                 warns.append(
                     f"投资比例由 {od} 降至 {nd}；按月净流入 {m}，"
@@ -582,7 +582,7 @@ def apply(data_dir: Path, changes: dict[str, Any], *, confirm: bool,
         "risk_warnings": risks,
         "monthly_consequence": _monthly_consequence(contract, new, changes),
         "home_purchase": changes.get("record_home_purchase"),
-        "note": "配置区增量覆盖完成；审计区 override_log 已追加（§10.1 仅追加）",
+        "note": "配置区增量覆盖完成；审计日志已追加（仅追加，不可改）",
     }
 
 

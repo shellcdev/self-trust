@@ -40,7 +40,7 @@ def test_preview_shows_risk_for_invest_ratio(tmp_data_dir, base_contract):
     res = mod_customize.preview(tmp_data_dir, _changes_for_set(
         "distribution_rules.invest_ratio", 0.0))
     assert res["touched_guard_fields"] == ["distribution_rules"]
-    assert any("invest_ratio 归零" in w for w in res["risk_warnings"])
+    assert any("投资比例归零" in w for w in res["risk_warnings"])
 
 
 def test_preview_shows_risk_for_safety_cushion_down(tmp_data_dir, base_contract):

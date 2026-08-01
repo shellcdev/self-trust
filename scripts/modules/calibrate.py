@@ -186,7 +186,7 @@ def calibrate(
             "recent_incomes": [v for _, v in series[-2:]],
             "invest_ratio_adj": RELAX_INVEST_ADJ,
             "note": "收入下行，已自动放松储蓄比例，优先保障生活；"
-                    "本调整仅本月生效，次月自动重评，原始 invest_ratio 不变"})
+                    "本调整仅本月生效，次月自动重评，原始投资比例不变"})
     elif lagging:
         deepest = max(lagging, key=lambda x: x["lag"])
         obj = deepest["objective"]

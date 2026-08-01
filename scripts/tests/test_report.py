@@ -63,7 +63,7 @@ class TestRenderReport:
 
     def test_empty_history_placeholder(self, base_contract):
         r = render_report(base_contract, [], today=TODAY)
-        assert "暂无 monthly_history" in r["ascii"]
+        assert "暂无月度快照" in r["ascii"]
 
     def test_reward_badge(self, base_contract):
         c = copy.deepcopy(base_contract)

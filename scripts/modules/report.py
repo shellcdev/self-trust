@@ -90,7 +90,7 @@ def _trend_ascii(history: list[dict[str, Any]]) -> str:
     """近 6 月资金流向三层 ASCII 趋势（攒钱/生活/冲动 + 安全垫红线）。"""
     recent = history[-6:]
     if not recent:
-        return "（暂无 monthly_history 快照，趋势图待累计）"
+        return "（暂无月度快照，趋势图待累计）"
     invests = [float(r.get("invest", 0) or 0) for r in recent]
     livings = [float(r.get("living", 0) or 0) for r in recent]
     impulses = [float(r.get("impulse", 0) or 0) for r in recent]

@@ -216,7 +216,7 @@ def judge(
     # ---- §7.3 imported_pending 前置拦截：未经人工核对的导入资产禁止一切审批 ----
     if contract.get("corpus_status") == "imported_pending":
         return {"ok": False, "error": "import_pending",
-                "message": "资产为第三方导入待核对状态（imported_pending），"
+                "message": "资产为第三方导入待核对状态，"
                            "禁止审批；请先完成人工核对确认（§7.3）"}
 
     # ---- 中间变量（F0 ~ F3.5）----

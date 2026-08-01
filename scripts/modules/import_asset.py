@@ -274,7 +274,7 @@ def stage_import(contract: dict[str, Any], candidates: dict[str, Any],
     if contract.get("corpus_status") == "imported_pending" and contract.get("pending_import"):
         return {
             "ok": False, "error": "already_staged",
-            "message": ("已有待核对导入（imported_pending）未确认/取消，"
+            "message": ("已有待核对导入未确认/取消，"
                         "禁止重复拉取覆盖旧候选（R3）；请先 confirm 或 cancel "
                         "当前导入，再发起新导入。"),
         }
@@ -305,7 +305,7 @@ def stage_import(contract: dict[str, Any], candidates: dict[str, Any],
             "rigid_annual_expenses": candidates["rigid_annual_expenses"],
         },
         "message": (
-            "已拉取第三方资产候选并暂存（corpus_status=imported_pending，审批已锁定）。"
+            "已拉取第三方资产候选并暂存，审批已锁定。"
             "请逐项核对摘要与可疑流水；确认请带本 token 执行 confirm，"
             "或带 token 执行 cancel 放弃本次导入。"),
     }
@@ -374,7 +374,7 @@ def confirm_import(contract: dict[str, Any], token: str,
             "liabilities": contract["liabilities"],
             "rigid_annual_expenses": contract["rigid_annual_expenses"],
         },
-        "message": ("第三方资产已核对确认并生效（imported_confirmed），"
+        "message": ("第三方资产已核对确认并生效，"
                     "资产池正式纳入资金池，可正常审批。"),
     }
 
@@ -386,11 +386,14 @@ def cancel_import(contract: dict[str, Any], token: str) -> dict[str, Any]:
         return {"ok": False, "error": err,
                 "message": "导入 token 不匹配（须用 stage 返回的 token）"}
     prior = staging.get("prior_status", "manual")
+    # 枚举值 → 中文展示（用户可见 message，不暴露内部 corpus_status 枚举）
+    _STATUS_ZH = {"manual": "手动录入", "imported_pending": "待核对",
+                  "imported_confirmed": "已确认"}
     contract["corpus_status"] = prior
     contract["pending_import"] = None
     return {
         "ok": True,
         "cancelled": True,
         "corpus_status_restored": prior,
-        "message": f"已放弃本次导入，corpus_status 还原为 {prior}（live 资产未改动）。",
+        "message": f"已放弃本次导入，资产状态还原为「{_STATUS_ZH.get(prior, prior)}」（实际资产未改动）。",
     }

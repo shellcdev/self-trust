@@ -27,6 +27,14 @@ from core import contract as contract_io
 from core import formulas as F
 from core.models import living_baseline_value
 
+# 目标状态枚举 → 中文（铁律 #7：用户可见串禁露枚举值）
+_OBJ_STATUS_ZH = {
+    "active": "进行中",
+    "completed": "已达成",
+    "overdue": "已超期",
+    "archived": "已归档",
+}
+
 # §6.2 确定性阈值（集中定义）
 LAG_STREAK_TRIGGER = 2          # 连续落后月数触发线
 INCOME_DROP_RATIO = 0.8         # 收入 ≤ 基线×0.8 视为下跌
@@ -121,8 +129,8 @@ def calibrate(
             changes.append({
                 "type": "lifecycle_suggestion", "objective": o.get("name"),
                 "suggest": "completed",
-                "note": "已达成 100%，请用户确认收尾（completed）；"
-                        "确认后 weight 释放，提示重分配（引擎不自动改其它目标权重）"})
+                "note": "已达成 100%，请用户确认收尾（标记已完成）；"
+                        "确认后权重释放，提示重分配（引擎不自动改其它目标权重）"})
         # F6 里程碑奖励解锁（≥120% 且未解锁 → 写 reward_quota，运行态子字段）
         r6 = F.f6_reward(current, target, bool(o.get("reward_unlocked")))
         if r6["unlockable"]:
@@ -275,7 +283,7 @@ def transition_objective(
     """
     if dst not in ("completed", "archived"):
         return {"ok": False, "error": "invalid_status",
-                "message": "用户显式迁移仅支持 completed | archived"}
+                "message": "用户显式迁移仅支持 已达成 | 已归档"}
     contract = contract_io.read_contract(data_dir)
     obj = next((o for o in contract.get("objectives", [])
                 if o.get("name") == name), None)
@@ -286,11 +294,11 @@ def transition_objective(
         target = obj.get("target_amount")
         if not target or float(obj.get("current_amount", 0)) < float(target):
             return {"ok": False, "error": "not_achieved",
-                    "message": "未达成 100%，不可标记 completed"}
+                    "message": "未达成 100%，不可标记已达成"}
     if not confirm:
         return {"ok": False, "error": "need_confirm",
-                "message": f"将把目标 {name} 迁移为 {dst}，weight="
-                           f"{obj.get('weight')} 将释放，需 confirm=True 二次确认",
+                "message": f"将把目标 {name} 迁移为 {_OBJ_STATUS_ZH.get(dst, dst)}，"
+                           f"权重 {obj.get('weight')} 将释放，需二次确认后生效",
                 "released_weight": obj.get("weight")}
     prev = obj.get("status") or "active"
     released = obj.get("weight")  # 记录释放前的权重（R2：归档后归零）
@@ -313,4 +321,4 @@ def transition_objective(
     })
     return {"ok": True, "objective": name, "from": prev, "to": dst,
             "released_weight": released,
-            "message": "weight 已释放，请重分配到其余目标（记账自定义，过 §5.4 闸门）"}
+            "message": "权重已释放，请重分配到其余目标（记账自定义，过 §5.4 闸门）"}

@@ -176,11 +176,11 @@ def _risk_warnings(contract: dict[str, Any], changed: dict[str, Any]) -> list[st
     if "optimization_goal" in changed:
         new = changed["optimization_goal"]["to"]
         if new == "wealth":
-            warns.append("切换至 wealth（激进增值）：生活费基线压缩、短期可支配收入减少、目标推进加速")
+            warns.append("切换至激进增值模式：生活费基线压缩、短期可支配收入减少、目标推进加速")
         elif new == "objective":
-            warns.append("切换至 objective（目标优先）：非目标支出更受限")
+            warns.append("切换至目标优先模式：非目标支出更受限")
         elif new == "balanced":
-            warns.append("切回 balanced（均衡）：恢复默认调度")
+            warns.append("切回均衡模式：恢复默认调度")
 
     if "objectives" in changed:
         olds = {o.get("name") for o in changed["objectives"]["from"]}
@@ -601,7 +601,7 @@ def withdraw_config(data_dir: Path, request_id: str, token: str,
     now = now or datetime.now()
     if datetime.fromisoformat(entry["expires_at"]) <= now:
         return {"ok": False, "error": "expired",
-                "message": "冷却窗已过期，修改已自动生效，不可撤回（见 override_log）"}
+                "message": "冷却窗已过期，修改已自动生效，不可撤回（详见审计日志）"}
     contract["pending_config_changes"] = [
         e for e in pcc if e["request_id"] != request_id]
     contract_io.write_contract(data_dir, contract, actor="configurator", confirm=True)

@@ -54,7 +54,7 @@ def test_preview_shows_risk_for_optimization_goal(tmp_data_dir, base_contract):
     res = mod_customize.preview(tmp_data_dir, _changes_for_set(
         "optimization_goal", "wealth"))
     assert "optimization_goal" in res["touched_guard_fields"]
-    assert any("wealth" in w for w in res["risk_warnings"])
+    assert any("激进增值" in w for w in res["risk_warnings"])
 
 
 def test_preview_non_guard_field_no_risk(tmp_data_dir, base_contract):

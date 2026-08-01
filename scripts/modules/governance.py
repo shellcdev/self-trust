@@ -210,11 +210,11 @@ def reset_contract(
                 "message": "契约不存在，无需重置；请直接 init"}
     if not confirm:
         return {"ok": False, "error": "need_confirm",
-                "message": "将丢弃当前契约并重建，audit 历史保留。"
+                "message": "将丢弃当前契约并重建，审计日志历史保留。"
                            "确认请再说一次『确认重置』（confirm=True）"}
     if corpus is None or monthly_contribution is None or not objectives:
         return {"ok": False, "error": "missing_params",
-                "message": "重置须提供新契约 3 项：corpus / monthly / objectives"}
+                "message": "重置须提供新契约 3 项：资金池 / 月度净流入 / 目标"}
 
     old_bytes = path.read_bytes()
     old_hash = hashlib.sha256(old_bytes).hexdigest()
@@ -224,7 +224,7 @@ def reset_contract(
         "time": audit_io.now_iso(today), "event": "contract_reset",
         "old_contract_sha256": old_hash,
         "reason": reason or "用户显式重置（§7.1.1）",
-        "note": "audit 目录全部保留；旧 objective 引用在报表标注（已重置前）",
+        "note": "审计目录全部保留；旧目标引用在报表标注（已重置前）",
     })
     path.unlink()   # 仅删契约文件；audit/ 不动（§10.1 仅追加不可删）
     result = lazy_init(data_dir, corpus=corpus,
@@ -232,7 +232,7 @@ def reset_contract(
                        objectives=objectives, today=today)
     if not result.get("ok"):
         return {"ok": False, "error": "reinit_failed",
-                "message": "重置后重建失败（旧契约已删，audit 保留）",
+                "message": "重置后重建失败（旧契约已删，审计日志保留）",
                 "detail": result}
     result["reset"] = True
     result["old_contract_sha256"] = old_hash

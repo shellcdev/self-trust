@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from . import crypto as crypto_io
-from .models import Contract, FIELD_ZONES, CORE_GUARD_FIELDS, Zone
+from .models import Contract, FIELD_ZONES, CORE_GUARD_FIELDS, Zone, ObjectiveStatus
 
 ENV_DATA_DIR = "SELFTRUST_DATA_DIR"
 CONTRACT_FILENAME = "contract.json"
@@ -64,7 +64,7 @@ _ENGINE_SUBFIELD_ALLOW: dict[str, frozenset[str]] = {
 }
 # 引擎可自动执行的目标状态翻转：仅 active→overdue（超期是确定性事实，§6.4）；
 # completed / archived 须用户显式确认（configurator）。
-_ENGINE_STATUS_FLIPS = frozenset({("active", "overdue")})
+_ENGINE_STATUS_FLIPS = frozenset({(ObjectiveStatus.ACTIVE.value, ObjectiveStatus.OVERDUE.value)})
 
 
 def _engine_list_change_ok(key: str, old_list: Any, new_list: Any) -> bool:
@@ -83,7 +83,7 @@ def _engine_list_change_ok(key: str, old_list: Any, new_list: Any) -> bool:
             if k not in allowed:
                 return False
             if key == "objectives" and k == "status":
-                src = o.get(k) or "active"
+                src = o.get(k) or ObjectiveStatus.ACTIVE.value
                 if (src, n.get(k)) not in _ENGINE_STATUS_FLIPS:
                     return False
     return True

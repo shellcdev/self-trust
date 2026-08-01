@@ -3,14 +3,14 @@
 
 加新枚举值（RequestStatus / ObjectiveStatus / corpus_status）必须同步在
 core/i18n.py 补中文映射，否则本测试失败——把"约定"升级成"机械保障"。
+
+目标状态直接遍历 ObjectiveStatus 枚举（与 RequestStatus 同构），
+**不再维护 KNOWN_OBJECTIVE_STATUSES 集合**——加新状态即自检覆盖。
 """
 from core.i18n import (
     REQUEST_STATUS_ZH, OBJECTIVE_STATUS_ZH, CORPUS_STATUS_ZH, zh,
 )
-from core.models import RequestStatus
-
-# 目标状态（models.Objective.status 为散字符串，集中登记以便自检）
-KNOWN_OBJECTIVE_STATUSES = {"active", "completed", "overdue", "archived"}
+from core.models import RequestStatus, ObjectiveStatus
 
 
 def test_request_status_all_mapped():
@@ -20,8 +20,9 @@ def test_request_status_all_mapped():
 
 
 def test_objective_status_all_mapped():
-    missing = KNOWN_OBJECTIVE_STATUSES - set(OBJECTIVE_STATUS_ZH)
-    assert not missing, f"目标状态未覆盖中文映射: {missing}"
+    # 直接遍历枚举，加新状态自动纳入自检（无需维护已知集合）
+    missing = {s.value for s in ObjectiveStatus} - set(OBJECTIVE_STATUS_ZH)
+    assert not missing, f"ObjectiveStatus 未覆盖中文映射: {missing}"
 
 
 def test_corpus_status_mapped():

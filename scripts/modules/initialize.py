@@ -20,6 +20,7 @@ from typing import Any
 
 from core import contract as contract_io
 from core import crypto as crypto_io
+from core.models import ObjectiveStatus
 from core.contract import GuardError  # noqa: F401  (re-export for callers)
 
 
@@ -97,7 +98,7 @@ def lazy_init(
             "lag_streak": 0,
             "reward_unlocked": False,
             "reward_quota": 0.0,
-            "status": "active",
+            "status": ObjectiveStatus.ACTIVE.value,
         }
         for o in accepted
     ]
@@ -190,7 +191,7 @@ def _demo_contract(today: date) -> dict[str, Any]:
         "lag_streak": 0,
         "reward_unlocked": False,
         "reward_quota": 0.0,
-        "status": "active",
+        "status": ObjectiveStatus.ACTIVE.value,
     }]
     return c
 

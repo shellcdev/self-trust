@@ -27,7 +27,7 @@ import secrets
 from core import audit as audit_io
 from core import contract as contract_io
 from core.contract import _validate_zones
-from core.models import CORE_GUARD_FIELDS, living_baseline_value
+from core.models import CORE_GUARD_FIELDS, living_baseline_value, ObjectiveStatus
 from modules.judge import estimate_mortgage_monthly as _est_mortgage
 
 
@@ -73,7 +73,7 @@ def _parse_objective(spec: str) -> dict[str, Any]:
         "name": parts[0], "weight": 1.0, "current_amount": 0.0,
         "start_date": None, "deadline": None, "target_amount": None,
         "lag_streak": 0, "reward_unlocked": False, "reward_quota": 0.0,
-        "status": "active",
+        "status": ObjectiveStatus.ACTIVE.value,
     }
     if len(parts) > 1 and parts[1]:
         ta = float(parts[1])

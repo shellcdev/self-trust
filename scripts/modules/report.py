@@ -17,7 +17,7 @@ from typing import Any, Optional
 from core import audit as audit_io
 from core import contract as contract_io
 from core import formulas as F
-from core.models import living_baseline_value, monthly_basis, monthly_net_effective
+from core.models import living_baseline_value, monthly_basis, monthly_net_effective, ObjectiveStatus
 from modules import streaks
 
 BAR_WIDTH = 16
@@ -49,7 +49,7 @@ def _objective_view(o: dict[str, Any], today: date) -> dict[str, Any]:
     name = o.get("name", "?")
     target = o.get("target_amount")
     current = float(o.get("current_amount", 0) or 0)
-    status = o.get("status") or "active"
+    status = o.get("status") or ObjectiveStatus.ACTIVE.value
     info = F.f4_lag(current, target, _parse_date(o.get("start_date")),
                     _parse_date(o.get("deadline")), today)
     view: dict[str, Any] = {

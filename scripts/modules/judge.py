@@ -22,8 +22,8 @@ from core import audit as audit_io
 from core import contract as contract_io
 from core import formulas as F
 from core.models import (
-    PendingRequest, RequestStatus, can_transition, living_baseline_value,
-    currency_symbol, monthly_basis, monthly_net_effective,
+    PendingRequest, RequestStatus, ObjectiveStatus, can_transition,
+    living_baseline_value, currency_symbol, monthly_basis, monthly_net_effective,
 )
 from modules import streaks
 from core.i18n import REQUEST_STATUS_ZH, zh
@@ -103,10 +103,10 @@ def _objective_impacts(
     # H3 修复：weight 是相对权重，分摊须除 active 目标总权重，否则多目标时
     # 各目标 share 直接相加会超过实际支出（影响被放大、lag 恶化判定过于激进）。
     active_objs = [o for o in contract.get("objectives", [])
-                   if (o.get("status") or "active") == "active"]
+                   if (o.get("status") or ObjectiveStatus.ACTIVE.value) == ObjectiveStatus.ACTIVE.value]
     total_weight = sum(float(o.get("weight", 1.0)) for o in active_objs) or 1.0
     for o in contract.get("objectives", []):
-        if (o.get("status") or "active") != "active":
+        if (o.get("status") or ObjectiveStatus.ACTIVE.value) != ObjectiveStatus.ACTIVE.value:
             continue
         deadline = _parse_date(o.get("deadline"))
         start = _parse_date(o.get("start_date"))
@@ -586,7 +586,7 @@ def withdraw(data_dir: Path, request_id: str,
     # 选最相关目标 = active 中权重最高且有 deadline 的目标（§5.3 同源规则）
     top = None
     for o in contract.get("objectives", []):
-        if (o.get("status") or "active") != "active" or not o.get("deadline"):
+        if (o.get("status") or ObjectiveStatus.ACTIVE.value) != ObjectiveStatus.ACTIVE.value or not o.get("deadline"):
             continue
         if top is None or float(o.get("weight", 0)) > float(top.get("weight", 0)):
             top = o

@@ -28,6 +28,7 @@ from core import audit as audit_io           # noqa: E402
 from core import contract as contract_io     # noqa: E402
 from core import crypto as crypto_io         # noqa: E402
 from core.contract import GuardError, ContractCorruptedError  # noqa: E402
+from core.models import ObjectiveStatus  # noqa: E402
 from modules import calibrate as mod_cal     # noqa: E402
 from modules import customize as mod_customize  # noqa: E402
 from modules import governance as mod_gov    # noqa: E402
@@ -500,7 +501,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("objective", help="目标生命周期迁移（§6.4，用户显式确认）")
     sp.add_argument("--name", required=True)
-    sp.add_argument("--to", required=True, choices=["completed", "archived"])
+    sp.add_argument("--to", required=True,
+                     choices=[ObjectiveStatus.COMPLETED.value, ObjectiveStatus.ARCHIVED.value])
     sp.add_argument("--confirm", action="store_true")
     sp.set_defaults(func=cmd_objective)
 

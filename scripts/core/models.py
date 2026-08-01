@@ -131,9 +131,21 @@ class PendingRequest:
         self.status = dst.value
 
 
+class ObjectiveStatus(str, Enum):
+    """长期目标状态机（§2 / §6.4 生命周期：active|completed|overdue|archived）。
+
+    与 RequestStatus 同构（str 子类，.value 即落盘字串）；引擎/模块一律用 .value
+    读写，i18n 映射以本枚举为唯一权威源（test_i18n 自动遍历，无需维护已知集合）。
+    """
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    OVERDUE = "overdue"
+    ARCHIVED = "archived"
+
+
 @dataclass
 class Objective:
-    """长期目标（§2 / §6.4 生命周期：active|completed|overdue|archived）。"""
+    """长期目标（§2 / §6.4 生命周期；状态见 ObjectiveStatus）。"""
     name: str
     weight: float = 1.0
     current_amount: float = 0.0
@@ -143,7 +155,7 @@ class Objective:
     lag_streak: int = 0
     reward_unlocked: bool = False
     reward_quota: float = 0.0
-    status: str = "active"    # 缺省视为 active（schema 向后兼容）
+    status: ObjectiveStatus = ObjectiveStatus.ACTIVE   # 缺省视为 active（schema 向后兼容）
 
 
 @dataclass

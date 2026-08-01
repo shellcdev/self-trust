@@ -25,7 +25,7 @@ from typing import Any, Optional
 from core import audit as audit_io
 from core import contract as contract_io
 from core import formulas as F
-from core.models import living_baseline_value
+from core.models import living_baseline_value, ObjectiveStatus
 from core.i18n import OBJECTIVE_STATUS_ZH, zh
 
 # §6.2 确定性阈值（集中定义）
@@ -103,25 +103,25 @@ def calibrate(
 
     # 2) §6.4 生命周期 + F6 奖励解锁（引擎仅翻转 active→overdue；completed 只建议）
     for o in contract.get("objectives", []):
-        status = o.get("status") or "active"
-        if status != "active":
+        status = o.get("status") or ObjectiveStatus.ACTIVE.value
+        if status != ObjectiveStatus.ACTIVE.value:
             continue
         target = o.get("target_amount")
         deadline = _parse_date(o.get("deadline"))
         current = float(o.get("current_amount", 0) or 0)
         achieved = (current / float(target)) if target else None
         if deadline and today > deadline and (achieved is None or achieved < 1.0):
-            o["status"] = "overdue"
+            o["status"] = ObjectiveStatus.OVERDUE.value
             changes.append({
                 "type": "lifecycle", "objective": o.get("name"),
-                "from": "active", "to": "overdue",
+                "from": ObjectiveStatus.ACTIVE.value, "to": ObjectiveStatus.OVERDUE.value,
                 "note": "超期未达成，退出常规校准（F4 超期守卫）；"
                         "请三选一：延期 / 降额收尾 / 确认放弃（均过 §5.4 闸门）"})
             continue
         if achieved is not None and achieved >= 1.0:
             changes.append({
                 "type": "lifecycle_suggestion", "objective": o.get("name"),
-                "suggest": "completed",
+                "suggest": ObjectiveStatus.COMPLETED.value,
                 "note": "已达成 100%，请用户确认收尾（标记已完成）；"
                         "确认后权重释放，提示重分配（引擎不自动改其它目标权重）"})
         # F6 里程碑奖励解锁（≥120% 且未解锁 → 写 reward_quota，运行态子字段）
@@ -136,7 +136,7 @@ def calibrate(
     # 3) lag_streak 缓冲计数（仅 active + 有 deadline；达标月归零）
     lagging: list[dict[str, Any]] = []
     for o in contract.get("objectives", []):
-        if (o.get("status") or "active") != "active":
+        if (o.get("status") or ObjectiveStatus.ACTIVE.value) != ObjectiveStatus.ACTIVE.value:
             continue
         info = F.f4_lag(o.get("current_amount", 0), o.get("target_amount"),
                         _parse_date(o.get("start_date")),
@@ -274,7 +274,7 @@ def transition_objective(
     权重释放：completed/archived 后该目标 weight 释放，提示用户重分配
     （引擎不自动改其它目标权重，§10.3 配置区只读）。
     """
-    if dst not in ("completed", "archived"):
+    if dst not in (ObjectiveStatus.COMPLETED.value, ObjectiveStatus.ARCHIVED.value):
         return {"ok": False, "error": "invalid_status",
                 "message": "用户显式迁移仅支持 已达成 | 已归档"}
     contract = contract_io.read_contract(data_dir)
@@ -283,7 +283,7 @@ def transition_objective(
     if obj is None:
         return {"ok": False, "error": "objective_not_found",
                 "message": f"未找到目标 {name}"}
-    if dst == "completed":
+    if dst == ObjectiveStatus.COMPLETED.value:
         target = obj.get("target_amount")
         if not target or float(obj.get("current_amount", 0)) < float(target):
             return {"ok": False, "error": "not_achieved",
@@ -293,10 +293,10 @@ def transition_objective(
                 "message": f"将把目标 {name} 迁移为 {zh(OBJECTIVE_STATUS_ZH, dst)}，"
                            f"权重 {obj.get('weight')} 将释放，需二次确认后生效",
                 "released_weight": obj.get("weight")}
-    prev = obj.get("status") or "active"
+    prev = obj.get("status") or ObjectiveStatus.ACTIVE.value
     released = obj.get("weight")  # 记录释放前的权重（R2：归档后归零）
     obj["status"] = dst
-    if dst == "archived":
+    if dst == ObjectiveStatus.ARCHIVED.value:
         # R2：归档即释放权重（置 0），避免重新激活时旧权重仍参与分摊导致错配；
         #     重新激活须由用户经 customize 重新分配权重（与 §6.4 文档一致）。
         obj["weight"] = 0
@@ -310,7 +310,7 @@ def transition_objective(
         "released_weight": released,
         "note": ("current_amount 为资金池内的标记额度，资金始终在 corpus 自由层"
                  "（archived 仅解除标记语义，corpus 不变，资金不消失）"
-                 if dst == "archived" else "达成收尾，奖励逻辑照常（§6.3）"),
+                 if dst == ObjectiveStatus.ARCHIVED.value else "达成收尾，奖励逻辑照常（§6.3）"),
     })
     return {"ok": True, "objective": name, "from": prev, "to": dst,
             "released_weight": released,

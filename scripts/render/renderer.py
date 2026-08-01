@@ -16,6 +16,8 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
+from core.i18n import zh_status
+
 SEP: str = "=" * 44
 """分隔线：44 个等号（仅用于顶部 + 标题下，§0.5）"""
 SEP_CTX: str = "-" * 44
@@ -192,7 +194,7 @@ def _render_judge_expire(r: dict, ts: str) -> str:
             final = p.get("final_status", "")
             d = p.get("decision", {})
             dr = d.get("result", "")
-            lines.append(f"· {cat} {_fmt(amt)} → {final}（{dr}）")
+            lines.append(f"· {cat} {_fmt(amt)} → {zh_status(final)}（{dr}）")
     lines.append(SEP)
     return "\n".join(lines)
 

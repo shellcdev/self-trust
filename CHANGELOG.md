@@ -1,5 +1,14 @@
 # CHANGELOG — self-trust
 
+## [0.7.21] - 2026-08-01
+
+### Refactor（渲染层状态映射 zh_status 统一 + 修 final_status 漏英文）
+- core/i18n.py 新增 `STATUS_ZH`（5 个状态族 union）与 `zh_status(value)` 渲染层统一映射；SpendStatus / ConfigChangeStatus 经由此接入渲染层（前置防范，目前仅内部落盘）。
+- render/renderer.py 接入 `zh_status`，修复 `_render_judge_expire` 将到期申请 `final_status`（RequestStatus）原样吐出、泄漏英文枚举的 bug。
+- test_i18n.py 新增 `test_status_zh_covers_all_families` / `test_zh_status_fallback_no_crash`：断言 zh_status 覆盖全部状态族（含 spend/config），未知值回退原值不崩。
+- references/rendering.md §0.7 补第 4 条：渲染层任何状态值一律走 `zh_status`，新增状态族须并入 STATUS_ZH 并补覆盖断言。
+- 测试：pytest 401 → 403（+2），smoke 12/12 不变。
+
 ## [0.7.20] - 2026-08-01
 
 ### Refactor（状态枚举集中化 + 去重 + 3.9 守卫）

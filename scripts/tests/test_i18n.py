@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from core.i18n import (
     REQUEST_STATUS_ZH, OBJECTIVE_STATUS_ZH, CORPUS_STATUS_ZH,
-    SPEND_STATUS_ZH, CONFIG_CHANGE_STATUS_ZH, zh,
+    SPEND_STATUS_ZH, CONFIG_CHANGE_STATUS_ZH, STATUS_ZH, zh_status, zh,
 )
 from core.models import (
     RequestStatus, ObjectiveStatus, SpendStatus, ConfigChangeStatus,
@@ -60,3 +60,24 @@ def test_zh_returns_chinese():
     assert zh(REQUEST_STATUS_ZH, "cooling") == "冷静期"
     assert zh(OBJECTIVE_STATUS_ZH, "completed") == "已达成"
     assert zh(CORPUS_STATUS_ZH, "manual") == "手动录入"
+
+
+def test_status_zh_covers_all_families():
+    # 渲染层统一映射 zh_status 须覆盖全部状态族（含 SpendStatus/ConfigChangeStatus），
+    # 否则渲染任意状态值仍可能泄漏英文枚举（铁律 #7 机械保障）。
+    families = [
+        (RequestStatus, {s.value for s in RequestStatus}),
+        (ObjectiveStatus, {s.value for s in ObjectiveStatus}),
+        (SpendStatus, {s.value for s in SpendStatus}),
+        (ConfigChangeStatus, {s.value for s in ConfigChangeStatus}),
+    ]
+    for _enum, vals in families:
+        missing = vals - set(STATUS_ZH)
+        assert not missing, f"{_enum.__name__} 未并入 STATUS_ZH 渲染层映射: {missing}"
+        for v in vals:
+            assert zh_status(v) != v, f"{_enum.__name__}.{v} 经 zh_status 仍回退原值（未中文化）"
+
+
+def test_zh_status_fallback_no_crash():
+    # 未知状态值回退原值，绝不 KeyError 崩引擎
+    assert zh_status("brand_new_state") == "brand_new_state"

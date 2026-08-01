@@ -76,6 +76,7 @@ CNY→¥ / USD→$ / EUR→€ / GBP→£ / HKD→HK$ / JPY→¥ / SGD→S$ / AU
 1. **全中文**：所有用户可见串为中文，不混用英文。
 2. **禁露字段名/枚举值**：不得将 `corpus_status` / `imported_pending` / `imported_confirmed` / `monthly_history` / `invest_ratio` / `override_log` / `safety_cushion` 等字段名或枚举常量直接暴露给用户；如需引用内部状态，翻译为中文等价描述（如 `imported_pending`→「待核对」、`manual`→「手动录入」）。
 3. **键值映射**：若 message/note 需要引用合约字段的当前值（如 `corpus_status` 还原值），代码内应对枚举值做中文映射后再拼接，不得把原始英文字符串直吐给渲染层。
+4. **渲染层统一映射**：`render/renderer.py` 与任何拼接状态值的模块，一律走 `core.i18n.zh_status(value)`——它是覆盖全部状态族（RequestStatus / ObjectiveStatus / corpus_status / **SpendStatus** / **ConfigChangeStatus**）的 union 映射，映射不到回退原值。新增状态族须在 `i18n.py` 并入 `STATUS_ZH`，并补 `test_i18n.py::test_status_zh_covers_all_families` 覆盖断言，确保渲染层不漏接。
 
 > rendering.md 是输出格式**唯一权威源**，本约定与 §0.6 同级——引擎产出的 message/note 是用户最终看到的文本，必须全量中文化，无豁免。
 

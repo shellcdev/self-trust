@@ -18,6 +18,7 @@ description: 个人自律记账/资金池自我治理：契约初始化、多币
 4. **误差披露**：简化口径（F5）数字须用「约/大约/估算」措辞，并附「长期目标以真实口径（F7）为准」（§2.0）。
 5. **性质声明**：涉及"信托/资产保护/法律"话题时，明确本工具无法律效力（§0）。
 6. **输出前必须读渲染契约，且按路由表重确认权威源**：每次发出本 skill 任意用户可见文本前，必须按上方「references 加载路由」表**实际打开**对应 `references/*.md`（渲染类必读 `rendering.md`，`templates/*.md` 仅作字段路径速查、不照抄其格式，预处理类读 `interaction.md`）；套 `rendering.md §0.5` 骨架输出。**禁止凭记忆作答，禁止把为 A 目的读过的文件当成 B 目的的权威源**——`interaction.md` 只管引擎前预处理，**不是渲染契约**；`templates/` 仅字段参考、**不是格式权威**；不得看 JSON 自编文案。
+7. **引擎 message/note 串须全中文、禁露字段名/枚举值**：引擎模块产出的所有用户可见字符串（`message`/`note`/`warning`/`summary`）必须为全中文；禁止将字段名（如 `monthly_history`/`invest_ratio`/`override_log`）或枚举常量（如 `imported_pending`/`imported_confirmed`/`manual`）直接暴露给用户——代码内须做中文映射后再拼接（详见 `rendering.md §0.7`）。
 
 ## 命令表（§9）
 

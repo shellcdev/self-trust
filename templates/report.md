@@ -10,7 +10,7 @@
 
 - `cushion_alert=true` → 头部追加红色预警：`⚠️ 安全垫余量不足 1 个月生活费，请控制支出`
 - `objectives[]` → 逐行引用 `objectives[].ascii`（引擎已拼好进度条+达成率+时间轴+颜色，不自绘）；颜色：绿=超前 / 黄=落后 / 红=lag≥10% 严重落后；无 deadline 目标只展示攒钱占比
-- `ascii` 含趋势图 → 展示；含「暂无 monthly_history 快照」→ 如实转述，不虚构；`snapshot_appended` 非空追加「本月首报已自动落一条月度快照」
+- `ascii` 含趋势图 → 展示；含「暂无月度快照」→ 如实转述，不虚构；`snapshot_appended` 非空追加「本月首报已自动落一条月度快照」
 - `pending_cooling` 非空 → 逐笔列出（融资购房申请追加首付/月供信息）；**空数组整段省略**
 - `notes` 非空 → **逐条转述**，不可省略；空数组整段省略
 - `mode_transition_hint` 非空 → 追加为最后一条提示

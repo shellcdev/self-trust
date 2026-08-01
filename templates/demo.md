@@ -10,6 +10,7 @@
 |---|---|---|
 | `demo_defaults_used=true` | `⚠️ 演示数据（场景为合成，基于默认参数），非真实审批` | 固定文案 |
 | `demo_defaults_used=false` | `⚠️ 演示数据（场景为合成，基于你真实契约：资金池 ¥{corpus} / 月净流入 ¥{monthly}），非真实审批` | `engine_params.corpus` / `engine_params.monthly_contribution`（原样引用） |
+| `engine_params.monthly_basis` 非空 | 真实契约含毛/净口径标记（`gross_estimate`/`net`），仅作上下文说明，不影响演示测算 | `engine_params.monthly_basis` |
 
 ## §4.2 场景列表字段
 

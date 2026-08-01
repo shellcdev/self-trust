@@ -104,12 +104,15 @@ def lazy_init(
     # 护栏 4：对账锚点从首日起算
     c["reconcile"]["last_reconcile"] = today_iso
 
-    # 护栏 2：净口径警告
+    # 护栏 2：净口径警告（层 A：置标记位 + 说清等式）
+    # 净口径 = 录入 − 负债月供 − 刚性月摊；当前两者均为 0，故净=毛，无法确认是否高估。
+    c["monthly_is_gross_estimate"] = True
     if not c["liabilities"] and not c["rigid_annual_expenses"]:
         warnings.append(
-            "⚠️ 当前 monthly_contribution 可能为毛口径（未录入负债/刚性年支出），"
-            "living_baseline / safety_cushion 据此偏高，"
-            "建议尽快 `记账自定义` 补 liabilities / rigid_annual_expenses"
+            "⚠️ 当前 monthly_contribution 按「毛口径」录入（未录入负债/刚性年支出），"
+            "净口径 = 录入 − 负债月供 − 刚性月摊；当前两项均为 0，故净=毛，"
+            "无法确认是否高估，living_baseline / safety_cushion 据此偏高；"
+            "说「记账自定义·补负债」或「补刚性」即净口径化"
         )
 
     # 静态加密配置（方案 C：开关 + 双路线）
@@ -147,6 +150,7 @@ def lazy_init(
         "contract_path": str(path),
         "corpus": float(corpus),
         "monthly_contribution": float(monthly_contribution),
+        "monthly_basis": "gross_estimate" if c["monthly_is_gross_estimate"] else "net",
         "currency": (currency or "CNY").upper(),
         "objectives": accepted,
         "warnings": warnings,

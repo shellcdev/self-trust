@@ -146,6 +146,16 @@ decision.scene
 
 > C（驳回）强制三段式：契约对照 → 目标影响 → 替代方案；附冷静期与 request_id。
 
+### 1.5 毛口径提示行（inputs.monthly_basis）
+
+`inputs.monthly_basis` 由引擎产出：`gross_estimate`（毛口径待校准，未录负债/刚性）或 `net`（净口径）。
+
+- 当 `monthly_basis == "gross_estimate"` 且本笔判定为 **B（附条件）/ C（驳回）** 或触发冷静期时，在卡片正文追加一行：
+  `⚠️ 月净流入为毛口径估算，安全垫/基线偏高（说『记账自定义·补负债』或『补刚性』即净口径化）`
+- 小额直批（场景 A 且无冷静期）**不**附此行，避免刷屏（分叉 1：仅大额场景/首笔提示）。
+- 该提示只说明口径风险，**不改变任何判定结论**（decision 仍原样引用）。
+- `inputs.monthly_net_effective` 为展示用净口径分解（仅展示，不进判定），一般不在 judge 卡片单列；如需说明净口径可引用其 `net` 值。
+
 ---
 
 ## 2. 冷静期生命周期（judge --action withdraw/finalize/expire/reminders）
@@ -214,13 +224,14 @@ decision.scene
 ============================================
 ✅记账初始化·已生成 🕐[YYYY-MM-DD HH:MM GMT+8]
 ============================================
-资金池 {symbol}{corpus} {currency}·月度净流入 {symbol}{monthly_contribution} {currency}
+资金池 {symbol}{corpus} {currency}·月度净流入（{monthly_basis}）{symbol}{monthly_contribution} {currency}
 目标：{objectives[0].name}（{symbol}{target_amount}，{deadline}）...
 ⚠️ {warnings 逐条}
 · 已生成默认契约，可随时说『自定义』逐项调
 ```
 
 - `currency` 非 CNY：金额用对应符号（USD→$ / EUR→€ / HKD→HK$ 等）；CNY 默认用 ¥ 不标币种名。
+- `monthly_basis`：`gross_estimate`（毛口径待校准）/ `net`（净口径）。为 `gross_estimate` 时月度净流入后附 `〔毛口径·待校准〕` 标记。
 - `warnings` 非空逐条转述（⚠️ 前缀）；`rejected_objectives` 非空转述被拒原因；`demo` 非空按 demo 渲染。
 
 ---
@@ -268,8 +279,10 @@ decision.scene
 · 资金池 ¥{corpus}·净资产 ¥{net_assets}
 · 安全垫余量 ¥{cushion_margin}
 · {objectives[].name} 达成 {achieved_ratio}%·{color}（时间轴应达 {time_progress}%）
-· 本月净流入 ¥{monthly_net}，进度平稳
+· 本月净流入 ¥{monthly_net}{monthly_basis?〔毛口径·待校准〕}（进度平稳）
 · 安全垫预警：{cushion_alert?⚠️ 告警:余量充足，无预警}
+（monthly_basis=net 时追加净口径分解行：
+· 月净流入（净）¥{monthly_net_effective.net}（录入 ¥{monthly_net_effective.entered} − 负债月供 ¥{monthly_net_effective.debt_monthly} − 刚性月摊 ¥{monthly_net_effective.rigid_monthly}））
 {pending_cooling 为空?（本段整段省略）:
 · 冷静期挂起（{pending_cooling.length} 笔）：
   · {pending_cooling[0].category} ¥{pending_cooling[0].amount} 待决
@@ -280,6 +293,8 @@ decision.scene
 - `notes[]` 必须**逐条转述**，不可省略。
 - `cushion_alert=true` 时红色预警。
 - `pending_cooling` 为空时整段省略。
+- `monthly_basis`：`gross_estimate`（毛口径待校准）/ `net`（净口径）。为 `gross_estimate` 时月度净流入行附 `〔毛口径·待校准〕` 标记，且 `notes[]` 中会含毛口径提示（引擎产出，逐条转述即可，不另起独立行）。
+- `monthly_basis=net` 时追加净口径分解行：`net = entered − debt_monthly − rigid_monthly`，**仅作展示，不进判定**（F0/F1/F2/judge 仍用原始 `monthly_contribution`）；`debt_monthly` / `rigid_monthly` 为 0 时该行数值平凡但仍输出。
 
 ---
 

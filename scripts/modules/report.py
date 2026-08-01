@@ -17,7 +17,7 @@ from typing import Any, Optional
 from core import audit as audit_io
 from core import contract as contract_io
 from core import formulas as F
-from core.models import living_baseline_value
+from core.models import living_baseline_value, monthly_basis, monthly_net_effective
 from modules import streaks
 
 BAR_WIDTH = 16
@@ -132,9 +132,19 @@ def render_report(
     progress_lines = [v["ascii"] for v in objectives]
     trend = _trend_ascii(history)
 
+    # 层 B：毛/净口径展示（仅展示，不改判定；effective 不进 F0/F1/F2）
+    basis = monthly_basis(contract)
+    eff = monthly_net_effective(contract)
+
     notes: list[str] = []
     if contract.get("mode") == "conversational":
         notes.append("估算数据，精度有限（conversational 模式无持久台账）")
+    # 毛口径待校准：report 常驻⚠️（把 init 一次性警告变成持久状态，分叉2）
+    if basis == "gross_estimate":
+        notes.append(
+            "⚠️ 月净流入为「毛口径」估算（未录入负债/刚性），"
+            "living_baseline / safety_cushion 据此偏高；"
+            "说「记账自定义·补负债」或「补刚性」即净口径化")
     if cushion_alert:
         notes.append(f"🔴 安全垫预警：垫上余量 ¥{margin:,.0f} 不足 1 个月生活费"
                      f"（¥{baseline:,.0f}），非计划消费已临时收紧（§10.2）")
@@ -151,6 +161,8 @@ def render_report(
         "corpus": f0["corpus"],
         "net_assets": f0["net_assets"],
         "monthly_net": f0["monthly_net"],
+        "monthly_basis": basis,
+        "monthly_net_effective": eff,
         "living_baseline": baseline,
         "effective_cushion": cushion,
         "cushion_margin": margin,

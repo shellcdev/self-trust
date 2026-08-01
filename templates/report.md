@@ -15,6 +15,8 @@
 - `notes` 非空 → **逐条转述**，不可省略；空数组整段省略
 - `mode_transition_hint` 非空 → 追加为最后一条提示
 - `rebalance_override` 非空 → 追加「⚠️ 本月校准临时调整已生效（仅本月有效，原始权重不变）」
+- `monthly_basis=gross_estimate` → 月度净流入行附 `〔毛口径·待校准〕` 标记；`notes[]` 已含毛口径提示，逐条转述即可
+- `monthly_basis=net` → 追加净口径分解行（net = entered − debt_monthly − rigid_monthly），**仅展示不进判定**
 
 ## 省略清单（以下字段不向用户展示）
 
@@ -46,3 +48,8 @@
 | `{rebalance_override}` | `rebalance_override` | 校准临时层（非null时提示） |
 | `{mode_transition_hint}` | `mode_transition_hint` | 模式切换建议（非null时提示） |
 | `{snapshot_appended}` | `snapshot_appended` | 当月首报快照（非null时提示） |
+| `{monthly_basis}` | `monthly_basis` | 毛口径/净口径标记：`gross_estimate` / `net` |
+| `{monthly_net_effective.net}` | `monthly_net_effective.net` | 净口径分解-净（**展示用，不进判定**） |
+| `{monthly_net_effective.entered}` | `monthly_net_effective.entered` | 净口径分解-录入值 |
+| `{monthly_net_effective.debt_monthly}` | `monthly_net_effective.debt_monthly` | 净口径分解-负债月供 |
+| `{monthly_net_effective.rigid_monthly}` | `monthly_net_effective.rigid_monthly` | 净口径分解-刚性月摊 |

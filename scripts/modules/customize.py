@@ -357,6 +357,11 @@ def _apply_changes(contract: dict[str, Any], changes: dict[str, Any]):
         touched.add("corpus")
         touched.add("liabilities")
 
+    # 层 A：录入负债/刚性后净口径化 → 标记位解除（两者皆空回 True）。
+    # 统一在此重算，覆盖 add/remove（含 record_home_purchase 追加房贷、H6 同名更新）。
+    new["monthly_is_gross_estimate"] = not (
+        new.get("liabilities") or new.get("rigid_annual_expenses"))
+
     return new, touched
 
 
@@ -367,6 +372,45 @@ def _diff(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
         if old.get(k) != new.get(k):
             changed[k] = {"from": old.get(k), "to": new.get(k)}
     return changed
+
+
+def _monthly_summary(contract: dict[str, Any]) -> dict[str, float]:
+    """净口径化前后对比快照（展示用）：净口径 / 生活费基线 / 有效安全垫。"""
+    from core.models import monthly_net_effective, living_baseline_value
+    eff = monthly_net_effective(contract)
+    lb = living_baseline_value(contract)
+    net = float(contract.get("corpus", 0)) - sum(
+        float(x.get("balance", 0)) for x in contract.get("liabilities", []))
+    cushion = _eff_cushion(contract.get("safety_cushion", {}), lb, net)
+    return {
+        "monthly_net_effective": eff["net"],
+        "living_baseline": lb,
+        "effective_cushion": cushion,
+    }
+
+
+def _monthly_consequence(contract: dict[str, Any], new: dict[str, Any],
+                         changes: dict[str, Any]) -> dict[str, Any] | None:
+    """层 C：补负债/刚性 → 预览额外返回净口径化前后后果行（不落盘预告）。
+
+    仅当变更涉及 add/remove 负债/刚性 或 record_home_purchase 时返回；
+    其余变更（set/白名单/目标/类目）与净口径无关，返回 None。
+    """
+    touches = bool(
+        changes.get("add_liability") or changes.get("remove_liability")
+        or changes.get("add_rigid") or changes.get("remove_rigid")
+        or changes.get("record_home_purchase"))
+    if not touches:
+        return None
+    before = _monthly_summary(contract)
+    after = _monthly_summary(new)
+    note = (f"净口径 ¥{before['monthly_net_effective']:,.0f} → "
+            f"¥{after['monthly_net_effective']:,.0f}；"
+            f"安全垫 ¥{before['effective_cushion']:,.0f} → "
+            f"¥{after['effective_cushion']:,.0f}；"
+            f"living_baseline ¥{before['living_baseline']:,.0f} → "
+            f"¥{after['living_baseline']:,.0f}")
+    return {"before": before, "after": after, "note": note}
 
 
 def _contract_sha(contract: dict[str, Any]) -> str:
@@ -444,12 +488,14 @@ def preview(data_dir: Path, changes: dict[str, Any]) -> dict[str, Any]:
     risks = _risk_warnings(new, changed)          # H5 修复：风险提示用修改后契约
     weakening = _is_weakening(changed, contract)  # H4 修复：传入契约算有效安全垫
     tok = _token(changes, _contract_sha(contract))
+    consequence = _monthly_consequence(contract, new, changes)  # 层 C 净口径化后果
     return {
         "ok": True, "needs_confirm": True, "preview": True,
         "changed_fields": changed,
         "touched_guard_fields": touched_guard,
         "risk_warnings": risks,
         "cooldown_required": weakening,
+        "monthly_consequence": consequence,
         "token": tok,
         "home_purchase": changes.get("record_home_purchase"),
         "message": (
@@ -534,6 +580,7 @@ def apply(data_dir: Path, changes: dict[str, Any], *, confirm: bool,
         "changed_fields": changed,
         "touched_guard_fields": touched_guard,
         "risk_warnings": risks,
+        "monthly_consequence": _monthly_consequence(contract, new, changes),
         "home_purchase": changes.get("record_home_purchase"),
         "note": "配置区增量覆盖完成；审计区 override_log 已追加（§10.1 仅追加）",
     }

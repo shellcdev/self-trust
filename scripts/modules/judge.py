@@ -23,7 +23,7 @@ from core import contract as contract_io
 from core import formulas as F
 from core.models import (
     PendingRequest, RequestStatus, can_transition, living_baseline_value,
-    currency_symbol,
+    currency_symbol, monthly_basis, monthly_net_effective,
 )
 from modules import streaks
 
@@ -345,6 +345,8 @@ def judge(
         "inputs": {
             **f0,
             "living_baseline": baseline,
+            "monthly_basis": monthly_basis(contract),
+            "monthly_net_effective": monthly_net_effective(contract),
             "effective_cushion": cushion,
             "invest_ratio": dr.get("invest_ratio", 0.5),
             "monthly_invest_nominal": invest_nominal,

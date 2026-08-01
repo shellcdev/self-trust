@@ -61,6 +61,7 @@ def _header(prefix: str, label: str, ts: str) -> str:
 def _render_judge_submit(r: dict, ts: str) -> str:
     dec = r.get("decision", {})
     inp = r.get("inputs", {})
+    basis = inp.get("monthly_basis")
     imp = r.get("impacted_objectives", [])
     cd = r.get("cooldown", {})
     scene = dec.get("scene", "?")
@@ -126,6 +127,11 @@ def _render_judge_submit(r: dict, ts: str) -> str:
             lines.append(f"冷静期 {days} 天，到期 {expire_at}（编号 {request_id}）")
         else:
             lines.append(f"冷静期 {days} 天，到期终裁（§2.3）")
+
+    # §1.5 毛口径提示行：仅 B/C/冷静期 且 毛口径时追加（小额直批 A 不刷屏）
+    if basis == "gross_estimate" and (scene in ("B", "C") or cooldown_t):
+        lines.append("⚠️ 月净流入为毛口径估算，安全垫/基线偏高"
+                     "（说『记账自定义·补负债』或『补刚性』即净口径化）")
 
     lines.append(SEP)
     return "\n".join(lines)
@@ -220,6 +226,7 @@ def _render_init(r: dict, ts: str) -> str:
     warnings = r.get("warnings", [])
     currency = r.get("currency", "CNY")
     sym = CURRENCY_SYMBOLS.get(currency, currency)
+    basis = r.get("monthly_basis", "gross_estimate")
 
     lines = [_header("✅", "记账初始化·已生成", ts), SEP]
     obj_strs = []
@@ -233,8 +240,10 @@ def _render_init(r: dict, ts: str) -> str:
             obj_strs.append(f"{name}（{sym}{ta:,.2f}）")
         else:
             obj_strs.append(name)
+    monthly_badge = "〔毛口径·待校准〕" if basis == "gross_estimate" else ""
     lines.append(f"资金池 {sym}{corpus:,.2f}{'' if currency == 'CNY' else ' ' + currency}"
-                 f"·月度净流入 {sym}{monthly:,.2f}{'' if currency == 'CNY' else ' ' + currency}")
+                 f"·月度净流入 {sym}{monthly:,.2f}{monthly_badge}"
+                 f"{'' if currency == 'CNY' else ' ' + currency}")
     lines.append(f"目标：{'；'.join(obj_strs)}")
     for w in warnings:
         lines.append(f"⚠️ {w}")
@@ -308,6 +317,8 @@ def _render_report(r: dict, ts: str) -> str:
     objs = r.get("objectives", [])
     pc = r.get("pending_cooling", [])
     notes = r.get("notes", [])
+    basis = r.get("monthly_basis", "gross_estimate")
+    eff = r.get("monthly_net_effective") or {}
 
     lines = [_header("📊", "报表·已生成", ts), SEP]
     lines.append(f"· 资金池 {_fmt(corpus)}·净资产 {_fmt(net)}")
@@ -318,11 +329,21 @@ def _render_report(r: dict, ts: str) -> str:
         color = "✅" if ar >= 100 else ("🟡" if ar >= 50 else "🔴")
         tp = o.get("time_progress", 0)
         lines.append(f"· {name} 达成 {_fmt_pct(ar)}·{color}（时间轴应达 {_fmt_pct(tp)}）")
-    lines.append(f"· 本月净流入 {_fmt(monthly_net)}，进度平稳")
+    monthly_badge = "〔毛口径·待校准〕" if basis == "gross_estimate" else ""
+    lines.append(f"· 本月净流入 {_fmt(monthly_net)}{monthly_badge}（进度平稳）")
     if alert:
         lines.append("· 安全垫预警：⚠️ 告警")
     else:
         lines.append("· 安全垫预警：余量充足，无预警")
+    if basis == "net" and eff:
+        entered = float(eff.get("entered", 0) or 0)
+        debt = float(eff.get("debt_monthly", 0) or 0)
+        rigid = float(eff.get("rigid_monthly", 0) or 0)
+        net_eff = float(eff.get("net", entered - debt - rigid) or 0)
+        lines.append(
+            f"· 月净流入（净）{_fmt(net_eff)}"
+            f"（录入 {_fmt(entered)} − 负债月供 {_fmt(debt)} − 刚性月摊 {_fmt(rigid)}）"
+        )
     if pc:
         lines.append(f"· 冷静期挂起（{len(pc)} 笔）：")
     for p in pc:
@@ -538,6 +559,9 @@ def _render_customize_preview(r: dict, ts: str) -> str:
         lines.append(f"· {field}: {fr} → {to}")
     for w in r.get("risk_warnings", []) or []:
         lines.append(f"· {w}")
+    cons = r.get("monthly_consequence")
+    if cons:
+        lines.append(f"· 净口径化后果：{cons.get('note', '')}")
     if token:
         lines.append(f"· 确认令牌 {token}（回复「确认修改」+ 令牌生效）")
     if cw:
@@ -558,6 +582,9 @@ def _render_customize_confirm(r: dict, ts: str) -> str:
         SEP,
         cs,
     ]
+    cons = r.get("monthly_consequence")
+    if cons:
+        lines.append(f"· 净口径化后果：{cons.get('note', '')}")
     if cw:
         lines.append(f"· 进入 {cd} 天冷静窗（编号 {rid}），窗内可「记账自定义·撤回」")
     lines.append(SEP)

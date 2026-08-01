@@ -66,6 +66,7 @@ FIELD_ZONES: dict[str, Zone] = {
     "pending_config_changes": Zone.RUNTIME,   # §5.4 冷却窗：削弱自身修改的待生效队列
     "pending_import": Zone.RUNTIME,           # §7.3 第三方导入候选暂存（核对确认才落 live corpus）
     "pending_spends": Zone.RUNTIME,           # M4：审批通过的支出台账（运行时态，reconcile 并入后清空）
+    "monthly_is_gross_estimate": Zone.RUNTIME,  # 毛/净口径标记位（引擎维护，显示层提示用）
     "rebalance_override": Zone.RUNTIME,
     "last_calibrate": Zone.RUNTIME,
     "last_report_date": Zone.RUNTIME,
@@ -163,6 +164,9 @@ class Contract:
     liabilities: list[dict[str, Any]] = field(default_factory=list)
     rigid_annual_expenses: list[dict[str, Any]] = field(default_factory=list)
     monthly_contribution: float = 0.0
+    # 毛/净口径标记位（RUNTIME 区，引擎维护）：True=毛口径待校准（未录负债/刚性），
+    # False=净口径（已录入负债/刚性）。层 A 状态位，仅用于显示层提示，不改判定口径。
+    monthly_is_gross_estimate: bool = True
     safety_cushion: dict[str, Any] = field(
         default_factory=lambda: asdict(SafetyCushion()))
     objectives: list[dict[str, Any]] = field(default_factory=list)
@@ -237,3 +241,43 @@ def living_baseline_value(contract: dict[str, Any]) -> float:
     if mode == "history3m" and lb.get("history3m_value"):
         return float(lb["history3m_value"])
     return float(contract.get("monthly_contribution", 0) or 0) * 0.5
+
+
+def monthly_basis(contract: dict[str, Any]) -> str:
+    """monthly_contribution 的口径：'gross_estimate'（毛口径待校准）或 'net'（净口径）。
+
+    - 显式标记 `monthly_is_gross_estimate` 优先；
+    - 旧契约无标记（迁移推断）：liabilities/rigid 非空 → net，空 → gross_estimate（保守提示）。
+    仅供显示层判断，不影响任何判定口径（判定仍用原始 monthly_contribution）。
+    """
+    flag = contract.get("monthly_is_gross_estimate", None)
+    if flag is True:
+        return "gross_estimate"
+    if flag is False:
+        return "net"
+    # 迁移推断：已录负债/刚性 → 视为已校准净口径；否则保守按毛口径待校准
+    if contract.get("liabilities") or contract.get("rigid_annual_expenses"):
+        return "net"
+    return "gross_estimate"
+
+
+def monthly_net_effective(contract: dict[str, Any]) -> dict[str, float]:
+    """展示用净口径分解（**仅展示列，不进判定**）：
+
+        net = entered − 负债月供(Σ) − 刚性月摊(Σ 年额/12)
+
+    返回 {entered, debt_monthly, rigid_monthly, net}。判定（F0/F1/F2/judge）
+    仍使用原始 monthly_contribution，本函数仅供 report/init/judge 卡片展示，
+    绝不被任何公式消费（避免「毛转净」悄悄改变护栏口径）。
+    """
+    entered = float(contract.get("monthly_contribution", 0) or 0)
+    liabs = contract.get("liabilities") or []
+    rigid = contract.get("rigid_annual_expenses") or []
+    debt_monthly = float(sum(float(x.get("monthly_payment", 0) or 0) for x in liabs))
+    rigid_monthly = float(sum(float(x.get("amount", 0) or 0) for x in rigid)) / 12.0
+    return {
+        "entered": entered,
+        "debt_monthly": debt_monthly,
+        "rigid_monthly": rigid_monthly,
+        "net": entered - debt_monthly - rigid_monthly,
+    }

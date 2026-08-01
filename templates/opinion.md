@@ -33,6 +33,7 @@
 | `{inputs.remaining_after}` | `inputs.remaining_after` | 扣除后余额 |
 | `{inputs.effective_cushion}` | `inputs.effective_cushion` | 安全垫阈值 |
 | `{inputs.monthly_net}` | `inputs.monthly_net` | 月度净流入 |
+| `{inputs.monthly_basis}` | `inputs.monthly_basis` | 毛口径/净口径标记（`gross_estimate`/`net`）；`gross_estimate` 且 B/C/冷静期时在卡片正文追加 §1.5 毛口径提示行 |
 | `{inputs.monthly_invest_nominal}` | `inputs.monthly_invest_nominal` | 月度可投增量（名义） |
 | `{inputs.financed}` | `inputs.financed` | 是否融资购房 |
 | `{inputs.down_payment}` | `inputs.down_payment` | 首付金额 |

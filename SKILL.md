@@ -112,8 +112,6 @@ python scripts/cli.py --key-file <路径> report
 
 核心闭环（初始化→审批→冷静期→报表→校准→奖励→申诉/覆写→重置→对账）+ §7.2 演示干跑 + §3.1 平滑过渡计数器 + 记账自定义（§5.4 闸门入口，含模式切换/白名单增删/类目增删/**冷却窗**）+ **负债/房贷建模**（净资产决策口径 + 融资购房 + 负债/刚性支出建账 + 记录购房落账）+ **§7.3 第三方导入**（CSV/手动拉取→人工核对确认→落盘；imported_pending 锁定审批、确认后 imported_confirmed；#1 修复：缺类不静默清空 live）+ **支出类目词汇表专用开关**（`--add-category`/`--remove-category`）+ **多币种（Level A+B）** + **静态加密开关（方案 C：passphrase/keyfile，默认关）** 已实装并通过测试（414 单测 + 12 端到端）。实现进度见 STATUS.md（真相源）。
 
-> 提交门禁：各 expert 仓库已通过 `core.hooksPath` 接入 `claw/experts/_shared/hooks/pre-commit`，每次 commit 自动跑 `check_py39.sh`（本仓库 scripts/ 须含 `from __future__ import annotations`）+ `check_sync_deps.sh`（各 expert 副本与模板无漂移）。临时绕过用 `git commit --no-verify`，但 CI 亦会拦。
-
 ## 依赖
 
 - 核心引擎纯标准库，**无第三方依赖**即可运行（init/judge/report/... 全部可用）。

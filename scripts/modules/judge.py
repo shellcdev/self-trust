@@ -22,7 +22,7 @@ from core import audit as audit_io
 from core import contract as contract_io
 from core import formulas as F
 from core.models import (
-    PendingRequest, RequestStatus, ObjectiveStatus, can_transition,
+    PendingRequest, RequestStatus, ObjectiveStatus, SpendStatus, can_transition,
     living_baseline_value, currency_symbol, monthly_basis, monthly_net_effective,
 )
 from modules import streaks
@@ -475,7 +475,8 @@ def submit(
         request_id = uuid.uuid4().hex[:12]
         _record_pending_spend(
             contract, request_id, result, amount, category, planned,
-            financed_amount, status="cooling" if cooldown_triggered else "approved",
+            financed_amount,
+            status=SpendStatus.COOLING.value if cooldown_triggered else SpendStatus.APPROVED.value,
             today=today)
         changed = True
 
@@ -566,7 +567,7 @@ def withdraw(data_dir: Path, request_id: str,
         return {"ok": False, "error": "already_expired",
                 "message": f"申请 {request_id} 已过期，请走到期终裁"}
     entry["status"] = RequestStatus.WITHDRAWN.value
-    _update_pending_spend_status(contract, request_id, "withdrawn")  # M4 台账联动
+    _update_pending_spend_status(contract, request_id, SpendStatus.WITHDRAWN.value)  # M4 台账联动
     contract_io.write_contract(data_dir, contract, actor="engine")
 
     # 正向激励要素（引擎只算，LLM 负责说人话）
@@ -635,7 +636,7 @@ def finalize(data_dir: Path, request_id: str,
         return {"ok": False, "error": "invalid_transition",
                 "message": f"申请状态 {zh(REQUEST_STATUS_ZH, src.value)} 不可终裁（仅冷静期可）"}
     entry["status"] = RequestStatus.DECIDED.value
-    _update_pending_spend_status(contract, request_id, "approved")  # M4 台账联动
+    _update_pending_spend_status(contract, request_id, SpendStatus.APPROVED.value)  # M4 台账联动
     contract_io.write_contract(data_dir, contract, actor="engine")
     decision = entry.get("decision", {})
     audit_io.append(data_dir, "approval_log", {
@@ -681,7 +682,8 @@ def expire(data_dir: Path, request_id: str | None = None,
         entry["status"] = dst.value
         _update_pending_spend_status(
             contract, entry["request_id"],
-            "approved" if dst == RequestStatus.DECIDED else "expired")  # M4 台账联动
+            SpendStatus.APPROVED.value if dst == RequestStatus.DECIDED
+            else SpendStatus.EXPIRED.value)  # M4 台账联动
         processed.append({"request_id": entry["request_id"],
                           "final_status": dst.value,
                           "amount": entry.get("amount"),

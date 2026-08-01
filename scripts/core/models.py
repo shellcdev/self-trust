@@ -143,6 +143,29 @@ class ObjectiveStatus(str, Enum):
     ARCHIVED = "archived"
 
 
+class SpendStatus(str, Enum):
+    """审批支出台账状态（M4 pending_spends；与 RequestStatus 同构，值串复用 cooling/withdrawn/expired + approved）。
+
+    落盘字串即 .value；引擎/模块一律用 .value 读写，i18n 映射以本枚举为唯一权威源
+    （test_i18n 自动遍历，加新状态即自检覆盖）。
+    """
+    COOLING = "cooling"
+    APPROVED = "approved"
+    WITHDRAWN = "withdrawn"
+    EXPIRED = "expired"
+
+
+class ConfigChangeStatus(str, Enum):
+    """配置变更待生效队列状态（§5.4 pending_config_changes；冷却窗生效/失败）。
+
+    落盘字串即 .value；引擎/模块一律用 .value 读写，i18n 映射以本枚举为唯一权威源
+    （test_i18n 自动遍历，加新状态即自检覆盖）。
+    """
+    PENDING = "pending"
+    APPLIED = "applied"
+    FAILED = "failed"
+
+
 @dataclass
 class Objective:
     """长期目标（§2 / §6.4 生命周期；状态见 ObjectiveStatus）。"""

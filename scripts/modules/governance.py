@@ -22,7 +22,7 @@ from typing import Any, Optional
 from core import audit as audit_io
 from core import contract as contract_io
 from core import formulas as F
-from core.models import RequestStatus
+from core.models import RequestStatus, SpendStatus
 from modules import streaks
 
 APPEAL_OVERRIDE_THRESHOLD = 3   # §5.2 连续申诉驳回满 3 次开放人工覆写
@@ -168,7 +168,7 @@ def override(
         "summary": "满 3 次申诉后人工覆写（§5.2）",
     }
     contract["appeal_count"] = 0   # 消耗申诉计数（防兜底常态化）
-    _update_pending_spend_status(contract, request_id, "approved")  # M4 台账联动
+    _update_pending_spend_status(contract, request_id, SpendStatus.APPROVED.value)  # M4 台账联动
     contract_io.write_contract(data_dir, contract, actor="engine")
     audit_io.append(data_dir, "override_log", {
         "time": audit_io.now_iso(today), "event": "manual_override",

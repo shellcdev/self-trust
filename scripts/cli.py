@@ -7,7 +7,7 @@
 - 引擎错误显式返回 {"ok": false, "error": ...}，退出码非 0，不吞错。
 
 示例：
-    python scripts/cli.py init --json --data-dir /tmp/st \\
+    python scripts/cli.py --data-dir /tmp/st init --json \\
         --corpus 200000 --monthly 8000 \\
         --objective "FIRE:3000000:2036-01-01"
     python scripts/cli.py judge --json --amount 6000 --category 合理享受
@@ -130,12 +130,9 @@ def _configure_crypto(args) -> None:
         crypto_io.set_audit_encrypted(bool(getattr(args, "encrypt", False)))
         return
     # 其余命令：探测现有契约，按其加密开关设置审计加密标志
-    try:
-        dd = contract_io.resolve_data_dir(args.data_dir)
-    except Exception:
-        crypto_io.set_session(passphrase=passphrase, key_file=key_file)
-        crypto_io.set_audit_encrypted(False)
-        return
+    # resolve_data_dir 不抛异常（命令行 > env > 默认家目录，路径构造均安全），
+    # 原裸 except Exception 会静默吞掉一切并使审计加密标志退化，已移除。
+    dd = contract_io.resolve_data_dir(args.data_dir)
     enabled = False
     if contract_io.contract_exists(dd):
         # key-file 模式密钥默认落在 <data-dir>/.self-trust.key，无需读契约即可定位

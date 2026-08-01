@@ -1,5 +1,14 @@
 # CHANGELOG — self-trust
 
+## [0.7.20] - 2026-08-01
+
+### Refactor（状态枚举集中化 + 去重 + 3.9 守卫）
+- 新增 `SpendStatus` / `ConfigChangeStatus` 枚举（core/models.py）+ 对应 `SPEND_STATUS_ZH` / `CONFIG_CHANGE_STATUS_ZH`（core/i18n.py）；替换 judge.py/governance.py 的 `pending_spends` 状态裸串、customize.py 的 `pending_config_changes` 状态裸串（写+比较），与 RequestStatus/ObjectiveStatus 同构；落盘字串不变（向后兼容）。
+- 抽取 `customize.py` / `import_asset.py` 重复的 `_token` / `_contract_sha` 到 `core/util.py`（`make_token` / `contract_sha`），单一来源。
+- 移除 cli.py 死守卫 `except Exception`（`resolve_data_dir` 实际永不抛异常，原写法会静默吞错并退化审计加密标志）。
+- 新增 `test_governance.py` / `test_cli.py` 单测；新增 `claw/experts/_shared/check_py39.sh` 守卫（缺 `from __future__ import annotations` 即报错）；补 i18n.py / test_i18n.py 的 future 导入。
+- 测试：pytest 392 → 401（+9），smoke 12/12 不变。
+
 ## [0.7.19] - 2026-08-01
 
 ### Feature（月净流入口径毛/净显示优化 — phase 1 纯展示层）

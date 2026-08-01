@@ -16,8 +16,6 @@ LLM 铁律：禁止心算，风险提示中的数字必须原样引用本模块�
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -27,7 +25,11 @@ import secrets
 from core import audit as audit_io
 from core import contract as contract_io
 from core.contract import _validate_zones
-from core.models import CORE_GUARD_FIELDS, living_baseline_value, ObjectiveStatus
+from core.models import (
+    CORE_GUARD_FIELDS, living_baseline_value, ObjectiveStatus, ConfigChangeStatus,
+)
+from core.i18n import CONFIG_CHANGE_STATUS_ZH
+from core.util import make_token as _token, contract_sha as _contract_sha
 from modules.judge import estimate_mortgage_monthly as _est_mortgage
 
 
@@ -413,17 +415,6 @@ def _monthly_consequence(contract: dict[str, Any], new: dict[str, Any],
     return {"before": before, "after": after, "note": note}
 
 
-def _contract_sha(contract: dict[str, Any]) -> str:
-    return hashlib.sha256(
-        json.dumps(contract, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-
-
-def _token(changes: dict[str, Any], contract_sha: str) -> str:
-    """确认 token：变更规范 + 当前契约摘要，防确认漂移 / 手滑（§5.4 单次确认不生效）。"""
-    canon = json.dumps(changes, ensure_ascii=False, sort_keys=True)
-    return hashlib.sha256((canon + "|" + contract_sha).encode("utf-8")).hexdigest()[:16]
-
-
 def build_changes(args) -> dict[str, Any]:
     """从 CLI args 解析出 changes 规范（结构化变更列表）。"""
     changes: dict[str, Any] = {
@@ -549,7 +540,7 @@ def apply(data_dir: Path, changes: dict[str, Any], *, confirm: bool,
                 "risk_warnings": risks,
             },
             "withdraw_token": secrets.token_hex(8),
-            "status": "pending",
+            "status": ConfigChangeStatus.PENDING.value,
         }
         contract.setdefault("pending_config_changes", []).append(entry)
         # 仅落盘运行时态（pending 队列），配置区原值未动 → 冷却窗内不生效
@@ -592,7 +583,7 @@ def withdraw_config(data_dir: Path, request_id: str, token: str,
     contract = contract_io.read_contract(data_dir)
     pcc = contract.get("pending_config_changes", []) or []
     entry = next((e for e in pcc if e["request_id"] == request_id), None)
-    if entry is None or entry["status"] != "pending":
+    if entry is None or entry["status"] != ConfigChangeStatus.PENDING.value:
         return {"ok": False, "error": "not_found",
                 "message": f"未找到待撤回的冷却窗修改（request_id={request_id}）"}
     if entry["withdraw_token"] != token:
@@ -626,7 +617,7 @@ def sweep_pending_config(data_dir: Path, *, now: datetime | None = None) -> dict
     keep: list[dict[str, Any]] = []
     expired: list[dict[str, Any]] = []
     for e in pcc:
-        if e["status"] == "pending" and datetime.fromisoformat(e["expires_at"]) <= now:
+        if e["status"] == ConfigChangeStatus.PENDING.value and datetime.fromisoformat(e["expires_at"]) <= now:
             expired.append(e)
         else:
             keep.append(e)
@@ -638,19 +629,19 @@ def sweep_pending_config(data_dir: Path, *, now: datetime | None = None) -> dict
     for e in expired:
         try:
             work, _ = _apply_changes(work, e["changes"])
-            e["status"] = "applied"
+            e["status"] = ConfigChangeStatus.APPLIED.value
         except Exception as ex:
             # M3：单条过期修改应用失败（如字段已不存在）→ 标记 failed 不阻塞其余，
             # 不把契约写成脏状态；failed 项保留在 pending_config_changes 供排查，
             # 下次扫描不再误当作 pending 重跑（status≠pending）。
-            e["status"] = "failed"
+            e["status"] = ConfigChangeStatus.FAILED.value
             e["error"] = str(ex)
             failed.append({"request_id": e["request_id"], "error": str(ex)})
     # M5：到期自动生效的条目（status=applied）从待决队列移除；failed 项保留。
-    work["pending_config_changes"] = [e for e in pcc if e["status"] != "applied"]
+    work["pending_config_changes"] = [e for e in pcc if e["status"] != ConfigChangeStatus.APPLIED.value]
     contract_io.write_contract(data_dir, work, actor="configurator", confirm=True)
     for e in expired:
-        if e["status"] != "applied":
+        if e["status"] != ConfigChangeStatus.APPLIED.value:
             continue
         audit_io.append(data_dir, "override_log", {
             "time": _now(), "event": "contract_customize_cooled",
@@ -660,7 +651,7 @@ def sweep_pending_config(data_dir: Path, *, now: datetime | None = None) -> dict
             "risk_warnings": e["preview"]["risk_warnings"],
             "reason": "冷却窗到期自动生效（§5.4）",
         })
-    return {"ok": True, "applied": [e["request_id"] for e in expired if e["status"] == "applied"],
+    return {"ok": True, "applied": [e["request_id"] for e in expired if e["status"] == ConfigChangeStatus.APPLIED.value],
             "failed": failed, "pending_count": len(keep)}
 
 
@@ -672,7 +663,7 @@ def review_config(data_dir: Path, *, now: datetime | None = None) -> dict[str, A
     pcc = contract.get("pending_config_changes", []) or []
     items: list[dict[str, Any]] = []
     for e in pcc:
-        if e["status"] != "pending":
+        if e["status"] != ConfigChangeStatus.PENDING.value:
             continue
         exp = datetime.fromisoformat(e["expires_at"])
         days_left = (exp.date() - now.date()).days

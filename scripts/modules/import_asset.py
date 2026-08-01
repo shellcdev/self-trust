@@ -22,8 +22,6 @@ CSV 格式（flows，可选）：``date,amount``（date YYYY-MM-DD；amount 正�
 from __future__ import annotations
 
 import csv
-import hashlib
-import json
 import secrets
 from datetime import date, datetime
 from pathlib import Path
@@ -32,21 +30,11 @@ from typing import Any, Optional
 from core import audit as audit_io
 from core import contract as contract_io
 from core.i18n import CORPUS_STATUS_ZH, zh
+from core.util import make_token as _token, contract_sha as _contract_sha
 
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
-
-
-def _token(staging: dict[str, Any], contract_sha: str) -> str:
-    """确认 token：候选暂存规范 + 当前契约摘要，防确认漂移 / 手滑。"""
-    canon = json.dumps(staging, ensure_ascii=False, sort_keys=True)
-    return hashlib.sha256((canon + "|" + contract_sha).encode("utf-8")).hexdigest()[:16]
-
-
-def _contract_sha(contract: dict[str, Any]) -> str:
-    return hashlib.sha256(
-        json.dumps(contract, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
 def parse_money(raw: Any) -> float:

@@ -89,12 +89,15 @@ def _locked_append(path: Path, line: str) -> None:
 
 
 def _atomic_write_bytes(path: Path, blob: bytes) -> None:
-    """加密日志整文件原子写（tmp + replace），保持与明文契约一致的原子性。"""
+    """加密日志整文件原子写（tmp + replace），写后回读校验防静默写坏。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".jsonl.tmp")
     with open(tmp, "wb") as f:
         f.write(blob)
     os.replace(tmp, path)
+    # CQ-1：写后回读校验，确保落盘字节与写入一致（防半截写/静默写坏）
+    if path.read_bytes() != blob:
+        raise IOError(f"审计日志写回校验失败: {path}")
 
 
 def _append_encrypted(path: Path, line: str) -> None:

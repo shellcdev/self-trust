@@ -31,6 +31,7 @@ from typing import Any, Optional
 
 from core import audit as audit_io
 from core import contract as contract_io
+from core.i18n import CORPUS_STATUS_ZH, zh
 
 
 def _now() -> str:
@@ -386,14 +387,11 @@ def cancel_import(contract: dict[str, Any], token: str) -> dict[str, Any]:
         return {"ok": False, "error": err,
                 "message": "导入 token 不匹配（须用 stage 返回的 token）"}
     prior = staging.get("prior_status", "manual")
-    # 枚举值 → 中文展示（用户可见 message，不暴露内部 corpus_status 枚举）
-    _STATUS_ZH = {"manual": "手动录入", "imported_pending": "待核对",
-                  "imported_confirmed": "已确认"}
     contract["corpus_status"] = prior
     contract["pending_import"] = None
     return {
         "ok": True,
         "cancelled": True,
         "corpus_status_restored": prior,
-        "message": f"已放弃本次导入，资产状态还原为「{_STATUS_ZH.get(prior, prior)}」（实际资产未改动）。",
+        "message": f"已放弃本次导入，资产状态还原为「{zh(CORPUS_STATUS_ZH, prior)}」（实际资产未改动）。",
     }

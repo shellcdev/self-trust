@@ -26,14 +26,7 @@ from core import audit as audit_io
 from core import contract as contract_io
 from core import formulas as F
 from core.models import living_baseline_value
-
-# 目标状态枚举 → 中文（铁律 #7：用户可见串禁露枚举值）
-_OBJ_STATUS_ZH = {
-    "active": "进行中",
-    "completed": "已达成",
-    "overdue": "已超期",
-    "archived": "已归档",
-}
+from core.i18n import OBJECTIVE_STATUS_ZH, zh
 
 # §6.2 确定性阈值（集中定义）
 LAG_STREAK_TRIGGER = 2          # 连续落后月数触发线
@@ -297,7 +290,7 @@ def transition_objective(
                     "message": "未达成 100%，不可标记已达成"}
     if not confirm:
         return {"ok": False, "error": "need_confirm",
-                "message": f"将把目标 {name} 迁移为 {_OBJ_STATUS_ZH.get(dst, dst)}，"
+                "message": f"将把目标 {name} 迁移为 {zh(OBJECTIVE_STATUS_ZH, dst)}，"
                            f"权重 {obj.get('weight')} 将释放，需二次确认后生效",
                 "released_weight": obj.get("weight")}
     prev = obj.get("status") or "active"

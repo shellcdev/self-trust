@@ -26,14 +26,7 @@ from core.models import (
     currency_symbol, monthly_basis, monthly_net_effective,
 )
 from modules import streaks
-
-# 申请状态枚举 → 中文（铁律 #7：用户可见串禁露枚举值）
-_REQ_STATUS_ZH = {
-    "cooling": "冷静期",
-    "withdrawn": "已撤回",
-    "decided": "已裁决",
-    "expired": "已过期",
-}
+from core.i18n import REQUEST_STATUS_ZH, zh
 
 # ---------------------------------------------------------------- 确定性阈值常量
 # （§4.4 lag 恶化 / §7 调度；集中定义，全局唯一标准，不散落各分支）
@@ -566,7 +559,7 @@ def withdraw(data_dir: Path, request_id: str,
     src = RequestStatus(entry["status"])
     if not can_transition(src, RequestStatus.WITHDRAWN):
         return {"ok": False, "error": "invalid_transition",
-                "message": f"申请状态 {_REQ_STATUS_ZH.get(src.value, src.value)} 不可撤回（仅冷静期可）"}
+                "message": f"申请状态 {zh(REQUEST_STATUS_ZH, src.value)} 不可撤回（仅冷静期可）"}
     # H2 修复：过期后状态机仍 cooling（终裁懒惰），须阻止撤回，改走 expire 终裁
     expire_d = datetime.fromisoformat(entry["expire_at"]).date()
     if today > expire_d:
@@ -640,7 +633,7 @@ def finalize(data_dir: Path, request_id: str,
     src = RequestStatus(entry["status"])
     if not can_transition(src, RequestStatus.DECIDED):
         return {"ok": False, "error": "invalid_transition",
-                "message": f"申请状态 {_REQ_STATUS_ZH.get(src.value, src.value)} 不可终裁（仅冷静期可）"}
+                "message": f"申请状态 {zh(REQUEST_STATUS_ZH, src.value)} 不可终裁（仅冷静期可）"}
     entry["status"] = RequestStatus.DECIDED.value
     _update_pending_spend_status(contract, request_id, "approved")  # M4 台账联动
     contract_io.write_contract(data_dir, contract, actor="engine")
@@ -684,7 +677,7 @@ def expire(data_dir: Path, request_id: str | None = None,
         dst = RequestStatus.EXPIRED if scene == "C" else RequestStatus.DECIDED
         if not can_transition(RequestStatus(entry["status"]), dst):
             return {"ok": False, "error": "invalid_transition",
-                    "message": f"{_REQ_STATUS_ZH.get(entry['status'], entry['status'])} → {_REQ_STATUS_ZH.get(dst.value, dst.value)} 非法"}
+                    "message": f"{zh(REQUEST_STATUS_ZH, entry['status'])} → {zh(REQUEST_STATUS_ZH, dst.value)} 非法"}
         entry["status"] = dst.value
         _update_pending_spend_status(
             contract, entry["request_id"],

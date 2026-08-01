@@ -9,6 +9,7 @@
     {上下文行：按需}
 
 本文件不依赖任何外部库，纯标准库。"""
+from __future__ import annotations
 # ================================================================
 # pylint: disable=too-many-branches,too-many-return-statements
 

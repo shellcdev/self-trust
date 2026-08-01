@@ -195,3 +195,29 @@ class TestR3StageImportNoOverwrite:
         assert res1["ok"] and res1["needs_confirm"]
         res2 = mod_import.stage_import(c, _candidates(), "x")
         assert not res2["ok"] and res2["error"] == "already_staged"
+
+
+# --------------------------------------------------------------------------- N5/R1
+def test_boost_map_merges_duplicate_objs(base_contract):
+    # #3 修复：rebalance_override.boosts 同名 obj 重复条目须求和合并，
+    # 而非 dict comprehension 静默覆盖（覆盖会丢失一笔加成且零告警）。
+    import copy
+    c_dup = copy.deepcopy(base_contract)
+    c_dup["rebalance_override"] = {
+        "month": "2026-07", "reason": "x",
+        "boosts": [{"obj": "FIRE", "invest_boost_pct": 15},
+                   {"obj": "FIRE", "invest_boost_pct": 10}],
+        "invest_ratio_adj": 0.0, "approval_rate_adj": 0.0, "flex": None, "expire": "次月"}
+    c_uniq = copy.deepcopy(base_contract)
+    c_uniq["rebalance_override"] = {
+        "month": "2026-07", "reason": "x",
+        "boosts": [{"obj": "FIRE", "invest_boost_pct": 15}],
+        "invest_ratio_adj": 0.0, "approval_rate_adj": 0.0, "flex": None, "expire": "次月"}
+    r_dup = mod_judge.judge(c_dup, amount=6000, category="合理享受",
+                            planned=False, today=date(2026, 7, 27))
+    r_uniq = mod_judge.judge(c_uniq, amount=6000, category="合理享受",
+                             planned=False, today=date(2026, 7, 27))
+    warnings = r_dup["optimization_applied"]["boost_warnings"]
+    assert warnings, "同名 obj 重复应发告警"
+    assert any("FIRE" in w and "合并" in w for w in warnings)
+    assert r_uniq["optimization_applied"]["boost_warnings"] == [], "唯一 obj 不应告警"

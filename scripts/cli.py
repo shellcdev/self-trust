@@ -336,7 +336,7 @@ def cmd_import_asset(args) -> int:
         if result.get("ok"):
             contract_io.write_contract(data_dir, contract, actor="configurator", confirm=True)
             audit_io.append(data_dir, "override_log", {
-                "time": _now_import(), "event": "asset_import_confirmed",
+                "time": audit_io.now_iso(_today(args)), "event": "asset_import_confirmed",
                 "source": import_source,
                 "applied": result.get("applied"),
                 "reason": "第三方资产人工核对确认（§7.3）",
@@ -390,11 +390,6 @@ def cmd_import_asset(args) -> int:
     if result.get("ok"):
         contract_io.write_contract(data_dir, contract, actor="configurator", confirm=True)
     return _emit(result, 0 if result.get("ok") else 1, args)
-
-
-def _now_import() -> str:
-    from datetime import datetime
-    return datetime.now().isoformat(timespec="seconds")
 
 
 def build_parser() -> argparse.ArgumentParser:

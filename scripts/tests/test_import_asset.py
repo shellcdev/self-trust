@@ -10,6 +10,9 @@ from pathlib import Path
 import pytest
 
 from modules import import_asset as mod
+from cli import build_parser, cmd_import_asset
+from core import audit as audit_io
+from core import contract as contract_io
 
 
 def _write_csv(path: Path, header: str, rows: list[str]) -> Path:
@@ -346,3 +349,23 @@ def test_partial_liability_correction_merges_not_replaces(base_contract):
     assert set(by_name) == {"房贷", "车贷"}            # 车贷未丢
     assert by_name["房贷"]["balance"] == 750000         # 修正生效
     assert by_name["车贷"]["balance"] == 200000         # 未提及者保留
+
+
+# ---------------------------------------------------------------- #2 修复：审计时间对齐逻辑 today
+def test_import_confirm_audit_time_uses_logical_today(base_contract, tmp_data_dir):
+    # 修复前 _now_import() 用 datetime.now()，--today 重放下审计时间不一致；
+    # 现改用 audit_io.now_iso(_today(args))，须对齐逻辑 today。
+    logical = "2026-07-27"
+    stage_args = build_parser().parse_args([
+        "--data-dir", str(tmp_data_dir), "--today", logical,
+        "import-asset", "--corpus", "150000", "--monthly", "8000"])
+    assert cmd_import_asset(stage_args) == 0
+    tok = contract_io.read_contract(tmp_data_dir)["pending_import"]["token"]
+    confirm_args = build_parser().parse_args([
+        "--data-dir", str(tmp_data_dir), "--today", logical,
+        "import-asset", "--confirm", "--token", tok])
+    assert cmd_import_asset(confirm_args) == 0
+    logs = audit_io.read_all(tmp_data_dir, "override_log")
+    confirmed = [l for l in logs if l.get("event") == "asset_import_confirmed"]
+    assert confirmed, "应有确认审计条目"
+    assert confirmed[0]["time"] == "2026-07-27T00:00:00", confirmed[0]

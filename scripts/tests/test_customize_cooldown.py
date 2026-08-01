@@ -126,6 +126,26 @@ def test_withdraw_after_expiry_rejected(tmp_data_dir, base_contract):
     assert wres["ok"] is False and wres["error"] == "expired"
 
 
+def test_sweep_multiple_expired_all_applied(tmp_data_dir, base_contract):
+    # 多个 pending 过期项一同扫描：验证在 work 深拷贝链上 pcc 引用一致，
+    # 全部生效 + 全部移出队列（regression for 深浅引用混用 #1）。
+    ch1 = _set("safety_cushion.months", 3)        # 6 → 3
+    r1 = cz.apply(tmp_data_dir, ch1, confirm=True,
+                  token=cz.preview(tmp_data_dir, ch1)["token"], reason="")
+    rid1 = r1["request_id"]
+    ch2 = _set("distribution_rules.invest_ratio", 0.3)  # 0.5 → 0.3
+    r2 = cz.apply(tmp_data_dir, ch2, confirm=True,
+                  token=cz.preview(tmp_data_dir, ch2)["token"], reason="")
+    rid2 = r2["request_id"]
+    future = datetime.now() + timedelta(days=2)
+    swept = cz.sweep_pending_config(tmp_data_dir, now=future)
+    assert set(swept["applied"]) == {rid1, rid2}, swept
+    c = contract_io.read_contract(tmp_data_dir)
+    assert c["safety_cushion"]["months"] == 3, "过期项1已生效"
+    assert c["distribution_rules"]["invest_ratio"] == 0.3, "过期项2已生效"
+    assert c.get("pending_config_changes", []) == [], "全部生效后队列清空"
+
+
 def test_stale_token_no_pending_created(tmp_data_dir, base_contract):
     ch = _set("safety_cushion.months", 3)
     tok = cz.preview(tmp_data_dir, ch)["token"]

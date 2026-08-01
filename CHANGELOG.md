@@ -1,5 +1,12 @@
 # CHANGELOG — self-trust
 
+## [0.7.23] - 2026-08-01
+
+### Fix（新发现硬伤续修：深浅引用 / 审计时间 / 静默覆盖）
+- `modules/customize.py` `sweep_pending_config` 深浅引用混用（🟡）：旧实现 `pcc = contract.get("pending_config_changes")` 取 `contract` 原列表引用，与 `work = copy.deepcopy(contract)` 深拷贝链脱节，靠重建才侥幸正确；改为全程在 `work` 深拷贝上操作（`pcc = work.get(...)`），消除不一致窗口。加回归测试 `test_sweep_multiple_expired_all_applied`。
+- `scripts/cli.py` `cmd_import_asset` 确认审计时间未对齐逻辑 today（🟢）：移除 `_now_import()`（`datetime.now()`），改用全代码统一的 `audit_io.now_iso(_today(args))`；`--today` 重放下审计时间现在与重放对齐。加回归测试 `test_import_confirm_audit_time_uses_logical_today`。
+- `modules/judge.py` `boost_map` 同名 obj 静默覆盖（🟢）：`rebalance_override.boosts` 若含同名 `obj`，原 dict comprehension 静默覆盖、丢失一笔加成且零告警；改为累加合并 + `optimization_applied.boost_warnings` 告警。加回归测试 `test_boost_map_merges_duplicate_objs`。
+
 ## [0.7.22] - 2026-08-01
 
 ### Fix（硬伤扫描修复：P0 数据丢失 + P1 逻辑绕过 + P2 潜在缺陷）

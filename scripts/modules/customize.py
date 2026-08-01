@@ -636,18 +636,17 @@ def sweep_pending_config(data_dir: Path, *, now: datetime | None = None) -> dict
     """
     now = now or datetime.now()
     contract = contract_io.read_contract(data_dir)
-    pcc = contract.get("pending_config_changes", []) or []
-    keep: list[dict[str, Any]] = []
+    # 全程在契约深拷贝上操作，避免 contract 原引用与 work 深拷贝链脱节
+    # （旧实现 pcc=contract.get(...) 取原列表，依赖下方重建才侥幸正确）。
+    work = copy.deepcopy(contract)
+    pcc = work.get("pending_config_changes", []) or []
     expired: list[dict[str, Any]] = []
     for e in pcc:
         if e["status"] == ConfigChangeStatus.PENDING.value and datetime.fromisoformat(e["expires_at"]) <= now:
             expired.append(e)
-        else:
-            keep.append(e)
     if not expired:
-        return {"ok": True, "applied": [], "pending_count": len(keep)}
+        return {"ok": True, "applied": [], "pending_count": len(pcc)}
 
-    work = copy.deepcopy(contract)
     failed: list[dict[str, Any]] = []
     for e in expired:
         try:
@@ -661,6 +660,7 @@ def sweep_pending_config(data_dir: Path, *, now: datetime | None = None) -> dict
             e["error"] = str(ex)
             failed.append({"request_id": e["request_id"], "error": str(ex)})
     # M5：到期自动生效的条目（status=applied）从待决队列移除；failed 项保留。
+    # pcc 即 work 自身的 pending_config_changes 列表，状态已在上面就地更新。
     work["pending_config_changes"] = [e for e in pcc if e["status"] != ConfigChangeStatus.APPLIED.value]
     contract_io.write_contract(data_dir, work, actor="configurator", confirm=True)
     for e in expired:
@@ -675,7 +675,7 @@ def sweep_pending_config(data_dir: Path, *, now: datetime | None = None) -> dict
             "reason": "冷却窗到期自动生效（§5.4）",
         })
     return {"ok": True, "applied": [e["request_id"] for e in expired if e["status"] == ConfigChangeStatus.APPLIED.value],
-            "failed": failed, "pending_count": len(keep)}
+            "failed": failed, "pending_count": len([e for e in pcc if e["status"] == ConfigChangeStatus.PENDING.value])}
 
 
 def review_config(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:

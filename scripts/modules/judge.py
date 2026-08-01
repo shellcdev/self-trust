@@ -294,8 +294,17 @@ def judge(
     judge_cushion_eff = judge_cushion * (1.0 - approval_adj)
 
     # ---- lag 恶化校验（F4 + F7 遍历 objectives，用实际现金流出测算）----
-    boost_map = {b.get("obj"): float(b.get("invest_boost_pct", 0))
-                 for b in (ro.get("boosts") or [])}  # R1/N5：目标投资加成映射
+    # R1/N5：目标投资加成映射；同名 obj 重复条目求和合并，避免 dict comprehension 静默覆盖
+    boost_map: dict[str, float] = {}
+    boost_warnings: list[str] = []
+    for b in (ro.get("boosts") or []):
+        obj = b.get("obj")
+        pct = float(b.get("invest_boost_pct", 0))
+        if obj in boost_map:
+            boost_map[obj] += pct
+            boost_warnings.append(f"同名目标投资加成重复，已合并: {obj}（当前合计 +{boost_map[obj]:g}）")
+        else:
+            boost_map[obj] = pct
     impacted, worsened, severe = _objective_impacts(
         contract, actual_cash_out, planned, invest_nominal, invest_real,
         inflation, today, boost_map=boost_map)
@@ -342,6 +351,7 @@ def judge(
             "effective_invest_ratio": eff_invest_ratio,   # R1
             "approval_adj": approval_adj,                 # R1
             "judge_cushion_eff": judge_cushion_eff,       # R1
+            "boost_warnings": boost_warnings,             # R1/N5：同名目标加成合并告警
         },
         "inputs": {
             **f0,

@@ -18,9 +18,23 @@ from typing import Any
 from core import audit as audit_io
 from core import contract as contract_io
 from core import formulas as F
+from core.models import RewardStatus
 
 # §8.2 扩展规划占位：更高梯度阈值（当前仅实现 120% 基础解锁，不启用）
 REWARD_TIERS_RESERVED = (1.5, 2.0)
+
+
+def _reward_status_of(o: dict[str, Any], r6: dict[str, Any]) -> str:
+    """由运行态子字段推导奖励状态枚举值（.value 即落盘字串）。
+
+    - 已解锁且额度用尽 → exhausted；已解锁且有额度 → unlocked；
+    - 未解锁但达标 → unlockable；未达标 → locked。
+    """
+    if bool(o.get("reward_unlocked")):
+        if float(o.get("reward_quota", 0) or 0) <= 0:
+            return RewardStatus.EXHAUSTED.value
+        return RewardStatus.UNLOCKED.value
+    return RewardStatus.UNLOCKABLE.value if r6["unlockable"] else RewardStatus.LOCKED.value
 
 
 def reward_status(contract: dict[str, Any]) -> dict[str, Any]:
@@ -36,6 +50,7 @@ def reward_status(contract: dict[str, Any]) -> dict[str, Any]:
             "reward_unlocked": bool(o.get("reward_unlocked")),
             "reward_quota": float(o.get("reward_quota", 0) or 0),
             "potential_reward_max": r6["reward_max"],
+            "reward_status": _reward_status_of(o, r6),
         })
     return {"ok": True, "rewards": out, "ref": "§6.3"}
 

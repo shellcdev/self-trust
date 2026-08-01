@@ -401,10 +401,9 @@ def _render_reward_status(r: dict, ts: str) -> str:
     for o in objs:
         name = o.get("name", "")
         ar = o.get("achieve_ratio", 0)
-        unlocked = o.get("reward_unlocked", False)
         quota = o.get("reward_quota", 0)
-        un = "已解锁" if unlocked else "未解锁"
-        lines.append(f"· {name}：达成率 {_fmt_pct(ar)} {un}")
+        status = zh_status(o.get("reward_status"))
+        lines.append(f"· {name}：达成率 {_fmt_pct(ar)} {status}")
         if quota > 0:
             lines.append(f"  可支取 {_fmt(quota)}")
         else:
@@ -672,9 +671,9 @@ def _render_import_pending(r: dict, ts: str) -> str:
         lines.append(f"· ⚠️ 可疑流水 {len(susp)} 条，请核对")
     else:
         lines.append("· 无可疑流水")
+    lines.append(f"· 导入状态：{zh_status(r.get('import_status'))}（核对前锁定全部审批）")
     lines.append(f"· 确认令牌 {token}")
     lines.append("· 核对后回复「确认导入」+ 令牌生效；或「取消导入」放弃")
-    lines.append("· ⚠️ 导入待核对状态将锁定全部审批")
     lines.append(SEP)
     return "\n".join(lines)
 
@@ -701,16 +700,17 @@ def _render_import_confirm(r: dict, ts: str) -> str:
             lines.append(f"· 负债 {len(liabs)} 项已纳入")
         if rigid:
             lines.append(f"· 刚性年支出 {len(rigid)} 项已纳入")
-    lines.append("· 审批已解锁")
+    lines.append(f"· 导入状态：{zh_status(r.get('import_status'))}，审批已解锁")
     lines.append(SEP)
     return "\n".join(lines)
 
 
 def _render_import_cancel(r: dict, ts: str) -> str:
+    status = zh_status(r.get("import_status", "manual"))
     return (
         f"✅资产导入·已取消{_now_ts()}\n"
         f"{SEP}\n"
-        "资产状态已还原\n"
+        f"资产状态已还原为「{status}」（实际资产未改动）\n"
         f"{SEP}\n"
     )
 

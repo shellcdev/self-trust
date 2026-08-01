@@ -166,6 +166,24 @@ class ConfigChangeStatus(str, Enum):
     FAILED = "failed"
 
 
+class RewardStatus(str, Enum):
+    """里程碑奖励解锁状态（§6.3；与 SpendStatus 同构，值串即落盘字串）。
+
+    - LOCKED    未解锁（达成率 <120%，不可解锁）
+    - UNLOCKABLE 待解锁（达成率 ≥120% 但本目标尚未解锁）
+    - UNLOCKED  已解锁（可支取，reward_quota > 0）
+    - EXHAUSTED 已用尽（曾解锁且 reward_quota 已递减到 0）
+
+    落盘字串即 .value；引擎/模块一律用 .value 读写，i18n 映射以本枚举为唯一权威源
+    （test_i18n 自动遍历，加新状态即自检覆盖）。渲染层走 zh_status 统一中文化
+    （铁律 #7：渲染层任何状态值都必须走 zh_status）。
+    """
+    LOCKED = "locked"
+    UNLOCKABLE = "unlockable"
+    UNLOCKED = "unlocked"
+    EXHAUSTED = "exhausted"
+
+
 @dataclass
 class Objective:
     """长期目标（§2 / §6.4 生命周期；状态见 ObjectiveStatus）。"""

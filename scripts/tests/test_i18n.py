@@ -14,10 +14,11 @@ from __future__ import annotations
 
 from core.i18n import (
     REQUEST_STATUS_ZH, OBJECTIVE_STATUS_ZH, CORPUS_STATUS_ZH,
-    SPEND_STATUS_ZH, CONFIG_CHANGE_STATUS_ZH, STATUS_ZH, zh_status, zh,
+    SPEND_STATUS_ZH, CONFIG_CHANGE_STATUS_ZH, REWARD_STATUS_ZH,
+    STATUS_ZH, zh_status, zh,
 )
 from core.models import (
-    RequestStatus, ObjectiveStatus, SpendStatus, ConfigChangeStatus,
+    RequestStatus, ObjectiveStatus, SpendStatus, ConfigChangeStatus, RewardStatus,
 )
 
 
@@ -51,6 +52,12 @@ def test_config_change_status_all_mapped():
     assert not missing, f"ConfigChangeStatus 未覆盖中文映射: {missing}"
 
 
+def test_reward_status_all_mapped():
+    # 直接遍历枚举，加新状态自动纳入自检（无需维护已知集合）
+    missing = {s.value for s in RewardStatus} - set(REWARD_STATUS_ZH)
+    assert not missing, f"RewardStatus 未覆盖中文映射: {missing}"
+
+
 def test_zh_fallback_no_crash():
     # 映射不到回退原值，绝不 KeyError 崩引擎
     assert zh(REQUEST_STATUS_ZH, "unknown_new_state") == "unknown_new_state"
@@ -70,6 +77,7 @@ def test_status_zh_covers_all_families():
         (ObjectiveStatus, {s.value for s in ObjectiveStatus}),
         (SpendStatus, {s.value for s in SpendStatus}),
         (ConfigChangeStatus, {s.value for s in ConfigChangeStatus}),
+        (RewardStatus, {s.value for s in RewardStatus}),
     ]
     for _enum, vals in families:
         missing = vals - set(STATUS_ZH)

@@ -51,12 +51,20 @@ CONFIG_CHANGE_STATUS_ZH: dict[str, str] = {
     "failed": "已失败",
 }
 
+# 里程碑奖励解锁状态（core.models.RewardStatus）
+REWARD_STATUS_ZH: dict[str, str] = {
+    "locked": "未解锁",
+    "unlockable": "待解锁",
+    "unlocked": "已解锁",
+    "exhausted": "已用尽",
+}
+
 
 # 全状态 union（渲染层统一取标签用）。新增状态族须并入此处，
 # 否则 zh_status 无法覆盖（铁律 #7：渲染层任何状态值都必须走 zh_status）。
 STATUS_ZH: dict[str, str] = {}
 for _d in (REQUEST_STATUS_ZH, OBJECTIVE_STATUS_ZH, CORPUS_STATUS_ZH,
-           SPEND_STATUS_ZH, CONFIG_CHANGE_STATUS_ZH):
+           SPEND_STATUS_ZH, CONFIG_CHANGE_STATUS_ZH, REWARD_STATUS_ZH):
     STATUS_ZH.update(_d)
 
 
@@ -66,7 +74,7 @@ def zh(mapping: Mapping[str, str], value) -> str:
 
 
 def zh_status(value) -> str:
-    """渲染层统一状态取标签：覆盖全部状态族（含 SpendStatus/ConfigChangeStatus），
+    """渲染层统一状态取标签：覆盖全部状态族（含 SpendStatus/ConfigChangeStatus/RewardStatus），
 
     映射不到回退原值（不崩引擎）。渲染用户可见串时一律走本函数，
     避免某状态族漏接 zh() 导致英文枚举值泄漏（铁律 #7）。

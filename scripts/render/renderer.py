@@ -502,7 +502,7 @@ def _render_override_confirm(r: dict, ts: str) -> str:
         SEP,
         f"申请 {rid} 放行",
         f"· 目标延后影响已记录（约 {_fmt_months(ds)} 个月）",
-        "· 已落 override_log",
+        "· 已记入审计日志",
         SEP,
     ]
     return "\n".join(lines)

@@ -143,7 +143,7 @@ def render_report(
     if basis == "gross_estimate":
         notes.append(
             "⚠️ 月净流入为「毛口径」估算（未录入负债/刚性），"
-            "living_baseline / safety_cushion 据此偏高；"
+            "生活费基线 / 安全垫据此偏高；"
             "说「记账自定义·补负债」或「补刚性」即净口径化")
     if cushion_alert:
         notes.append(f"🔴 安全垫预警：垫上余量 ¥{margin:,.0f} 不足 1 个月生活费"

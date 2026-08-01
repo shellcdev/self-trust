@@ -79,7 +79,7 @@ def f1_effective_cushion(
         return float(fixed)
     if mode == "ratio":
         return max(float(net_assets), 0.0) * float(ratio)
-    raise ValueError(f"未知 safety_cushion.mode: {mode!r}")
+    raise ValueError(f"未知安全垫模式：{mode!r}")
 
 
 # ---------------------------------------------------------------- F2

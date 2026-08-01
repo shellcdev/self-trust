@@ -109,9 +109,9 @@ def lazy_init(
     c["monthly_is_gross_estimate"] = True
     if not c["liabilities"] and not c["rigid_annual_expenses"]:
         warnings.append(
-            "⚠️ 当前 monthly_contribution 按「毛口径」录入（未录入负债/刚性年支出），"
+            "⚠️ 当前月度净流入按「毛口径」录入（未录入负债/刚性年支出），"
             "净口径 = 录入 − 负债月供 − 刚性月摊；当前两项均为 0，故净=毛，"
-            "无法确认是否高估，living_baseline / safety_cushion 据此偏高；"
+            "无法确认是否高估，生活费基线 / 安全垫据此偏高；"
             "说「记账自定义·补负债」或「补刚性」即净口径化"
         )
 

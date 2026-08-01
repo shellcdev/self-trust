@@ -408,7 +408,7 @@ def _monthly_consequence(contract: dict[str, Any], new: dict[str, Any],
             f"¥{after['monthly_net_effective']:,.0f}；"
             f"安全垫 ¥{before['effective_cushion']:,.0f} → "
             f"¥{after['effective_cushion']:,.0f}；"
-            f"living_baseline ¥{before['living_baseline']:,.0f} → "
+            f"生活费基线 ¥{before['living_baseline']:,.0f} → "
             f"¥{after['living_baseline']:,.0f}")
     return {"before": before, "after": after, "note": note}
 

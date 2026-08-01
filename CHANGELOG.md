@@ -1,5 +1,27 @@
 # CHANGELOG — self-trust
 
+## [0.7.19] - 2026-08-01
+
+### Feature（月净流入口径毛/净显示优化 — phase 1 纯展示层）
+- 新增 `monthly_is_gross_estimate` 标记位（RUNTIME 区）+ `monthly_basis()` 迁移推断 + `monthly_net_effective()` 净口径分解（net = 录入 − 负债月供 − 刚性月摊，仅展示不进判定）。
+- 展示层：init/report 毛口径加〔毛口径·待校准〕徽标；report 常驻毛口径提示；`monthly_basis=net` 时附净口径分解行（rendering.md §1.5）。
+- judge §1.5：仅 B/C/冷静期追毛口径提示行，不改变判定结论；customize 补/删负债·刚性自动翻转标记，预览+落盘返回净口径化后果行（dry-run）。
+- 文档同步：rendering.md §1.5/§3/§5、templates/{report,opinion,demo}.md、contract-schema.md。
+- scope：严格展示层，判定（F0/F1/F2/judge）仍用原始 monthly_contribution，无行为变化。来源 `e70a1ef`。
+
+### Fixed（Python 3.9 兼容）
+- `scripts/render/renderer.py` 补 `from __future__ import annotations`，兼容 pyproject 声明的 `requires-python >=3.9`。来源 `690069e`。
+
+### i18n（用户可见串全量中文化 + 防复发约定）
+- `21207ae` 首轮 5 处（月度净流入/生活费基线/安全垫/审计日志/安全垫模式）。
+- `5dc579c` 续扫 9 处引擎 message/note（import_asset 的 imported_pending/corpus_status/imported_confirmed/{prior} 枚举、judge 拦截、report 空占位、customize 投资比例/override_log、calibrate 原始投资比例）→ 加 `_STATUS_ZH` 枚举映射。
+- `d414db1` 加防复发约定：rendering.md §0.7「引擎消息串语言约定」（全中文、禁露字段名/枚举值、键值映射中文后拼接）+ SKILL 铁律 #7 同步。
+- `6aa1bd7` 收尾：STATUS.md i18n 轮次标记占位符补填；templates/report.md 趋势图空占位旧串「暂无 monthly_history 快照」→「暂无月度快照」对齐引擎现状（避免 LLM 按旧串查找漏转述）。
+- 全量扫描确认 `scripts/render/renderer.py` 与 `scripts/core/` 无用户可见串英文枚举泄露（i18n 盲区已净）；仅通用词 `token` 保留（非字段名/枚举）。
+
+### 测试
+- 新增 `test_monthly_basis.py`(15) + `test_renderer_monthly.py`(9)；全量 363 → 387 通过。
+
 ## [0.7.18] - 2026-07-30
 
 ### Fix（CI 挂红 + 版本元数据陈旧 — 硬伤扫描 P1 修复）

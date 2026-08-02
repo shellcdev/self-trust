@@ -1,3 +1,25 @@
 # ClawHub publish exclusions
 # Keep these in the GitHub repo, but drop them from the published skill bundle.
+# Principle: the published bundle = runtime body only (SKILL.md + engine + references/templates/docs).
+# Repo governance, dev/test artifacts, and the license file stay in Git but never ship in the package.
+
+# --- test & dev artifacts (never part of the runtime) ---
 scripts/tests/
+scripts/__pycache__/
+scripts/.pytest_cache/
+__pycache__/
+*.pyc
+
+# --- repo governance / contributor docs (not the skill runtime) ---
+.github/
+.gitignore
+LICENSE
+CHANGELOG.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+STATUS.md
+README.md
+README_EN.md
+
+# --- python project metadata (ClawHub doesn't pip-install; engine only needs `python` on PATH) ---
+pyproject.toml

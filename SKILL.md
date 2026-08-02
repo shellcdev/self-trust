@@ -1,8 +1,26 @@
 ---
 name: self-trust
-description: 个人自律记账与资金治理的确定性引擎（规则代码，非 AI 推断）：支出审批+冷静期、预算目标与奖励、月报校准、对账、债务/房贷建模、多币种、可选 AES-256-GCM 加密账本。触发：记账/账本/预算/存钱/FIRE/消费审批/对账/债务/房贷/审计。
+description: >
+  个人自律记账与资金治理的确定性引擎（规则代码，非 AI 推断）：支出审批+冷静期、预算目标与奖励、月报校准、对账、债务/房贷建模、多币种、可选 AES-256-GCM 加密账本。触发：记账/账本/预算/存钱/FIRE/消费审批/对账/债务/房贷/审计。
 
-Self-trust — a deterministic personal-finance discipline engine (rule code, not AI inference): spending approval + cooldown, budget goals & rewards, monthly calibration, reconciliation, debt/mortgage modeling, multi-currency, optional AES-256-GCM encrypted ledger. Triggers: bookkeeping / ledger / budget / saving / FIRE / spend-approval / reconciliation / debt / mortgage / audit.
+  Self-trust — a deterministic personal-finance discipline engine (rule code, not AI inference): spending approval + cooldown, budget goals & rewards, monthly calibration, reconciliation, debt/mortgage modeling, multi-currency, optional AES-256-GCM encrypted ledger. Triggers: bookkeeping / ledger / budget / saving / FIRE / spend-approval / reconciliation / debt / mortgage / audit.
+version: 1.0.0
+metadata:
+  openclaw:
+    requires:
+      bins:
+        - python
+    envVars:
+      - name: SELFTRUST_DATA_DIR
+        required: false
+        description: 账本数据目录覆盖（默认 ~/.self_trust）
+      - name: SELFTRUST_PASS
+        required: false
+        description: 启用 AES-256-GCM 加密时的口令
+      - name: SELFTRUST_KEY_FILE
+        required: false
+        description: 加密密钥文件路径（与 SELFTRUST_PASS 二选一）
+    homepage: https://github.com/shellcdev/self-trust
 ---
 
 # self-trust（自律记账引擎）
